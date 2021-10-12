@@ -1,0 +1,6 @@
+bin/
+obj/
+*.edn
+*.fsx
+*.ipynb
+global.json
