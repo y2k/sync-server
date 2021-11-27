@@ -4,3 +4,4 @@ obj/
 *.fsx
 *.ipynb
 global.json
+.ionide/

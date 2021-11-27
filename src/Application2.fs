@@ -141,3 +141,27 @@ module Uploader =
               { db = db } ]
         else
             []
+
+module Resolvers =
+    module DatabaseResolver =
+        let getDb () : Uploader.Database = failwith "???"
+        let resolve f = f (getDb ())
+
+    module ConfigResolver =
+        let getDb () : Uploader.Config =
+            { server = ""
+              sources = [ {| path = ""; tags = [] |} ] }
+
+        let resolve f = f (getDb ())
+
+module Dispatcher =
+    let listenUpdate (_: #Event -> Event list) = ()
+    let dispatch (_: Event) = failwith "???"
+
+let main _ =
+    Uploader.handleNewFile
+    |> Resolvers.ConfigResolver.resolve
+    |> Resolvers.DatabaseResolver.resolve
+    |> Dispatcher.listenUpdate
+
+    0
