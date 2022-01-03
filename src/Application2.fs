@@ -38,30 +38,31 @@ module RemoteSyncer =
     open Suave.Filters
     open Suave.Operators
 
-    let private queue = ResizeArray<byte []>()
+    let private queue = ResizeArray<string * byte []>()
 
-    let private handlePost (req: HttpRequest) =
-        queue.Add(req.rawForm)
+    let private handlePost (topic : string) (req: HttpRequest) =
+        queue.Add(topic, req.rawForm)
         Successful.NO_CONTENT
 
-    let private handleGet (_: int64) =
-        if queue.Count > 0 then
-            let c = queue.[0]
-            queue.RemoveAt 0
+    let private handleGet ((topic : string), (_: int64)) =
+        match Seq.tryFindIndex (fun (t, _) -> t = topic) queue with
+        | Some index ->
+            let (_, c) = queue.[index]
+            queue.RemoveAt index
             Successful.ok c
-        else
-            Successful.NO_CONTENT
+        | None -> Successful.NO_CONTENT
 
-    let main () =
-        choose [ GET >=> pathScan "/api/%i" handleGet
-                 POST >=> path "/api" >=> request handlePost ]
+    let startServer () =
+        [ GET >=> pathScan "/api/%s/%i" handleGet
+          POST >=> pathScan "/api/%s" (fun t -> request (handlePost t)) ]
+        |> choose
         |> startWebServer defaultConfig
 
-    let receiveEvent (url: string) =
+    let receiveEvent domain (topic: string) =
         async {
             use client = new HttpClient()
 
-            let! response = client.GetAsync($"{url}/%i{0}") |> Async.AwaitTask
+            let! response = client.GetAsync($"http://%s{domain}/api/%s{topic}/%i{0}") |> Async.AwaitTask
 
             let! bytes =
                 response.Content.ReadAsByteArrayAsync()
@@ -71,7 +72,7 @@ module RemoteSyncer =
             return p.UnPickle bytes
         }
 
-    let sendEvent (url: string) t =
+    let sendEvent domain (topic: string) t =
         async {
             let p = FsPickler.CreateBinarySerializer()
             let bytes = p.Pickle t
@@ -79,7 +80,7 @@ module RemoteSyncer =
             use client = new HttpClient()
 
             do!
-                client.PostAsync(url, new ByteArrayContent(bytes))
+                client.PostAsync($"http://%s{domain}/api/%s{topic}", new ByteArrayContent(bytes))
                 |> Async.AwaitTask
                 |> Async.Ignore
         }
@@ -155,13 +156,16 @@ module Resolvers =
         let resolve f = f (getDb ())
 
 module Dispatcher =
-    let listenUpdate (_: #Event -> Event list) = ()
-    let dispatch (_: Event) = failwith "???"
+    let listenUpdate (_: #Event -> Event list) : unit Async = failwith "???"
+    let dispatch (_: Event) : unit = failwith "???"
 
 let main _ =
-    Uploader.handleNewFile
-    |> Resolvers.ConfigResolver.resolve
-    |> Resolvers.DatabaseResolver.resolve
-    |> Dispatcher.listenUpdate
-
+    Async.Parallel [
+        Uploader.handleNewFile
+        |> Resolvers.ConfigResolver.resolve
+        |> Resolvers.DatabaseResolver.resolve
+        |> Dispatcher.listenUpdate
+    ]
+    |> Async.RunSynchronously
+    |> ignore
     0
