@@ -159,13 +159,16 @@ module Dispatcher =
     let listenUpdate (_: #Event -> Event list) : unit Async = failwith "???"
     let dispatch (_: Event) : unit = failwith "???"
 
-let main _ =
-    Async.Parallel [
+let main (args : string array) =
+    match args with
+    | [| "uploader" |] ->
         Uploader.handleNewFile
         |> Resolvers.ConfigResolver.resolve
         |> Resolvers.DatabaseResolver.resolve
         |> Dispatcher.listenUpdate
-    ]
-    |> Async.RunSynchronously
-    |> ignore
+        |> Async.RunSynchronously
+        |> ignore
+    | [| "downloader" |] -> failwith "???"
+    | [| "server" |] -> failwith "???"
+    | _ -> ()
     0
