@@ -4,19 +4,26 @@ open System
 open Types
 
 module DownloadApp =
-    type ISaveFiles = abstract member invoke : string -> byte [] -> unit
+    type ISaveFiles =
+        abstract member invoke: string -> byte [] -> unit
 
     let main env (config: DownloadConfig) event =
         match FileChangedEvent.decode event with
         | None -> ()
-        | Some info ->
-            (env :> ISaveFiles).invoke $"{config.outDirectory}/{info.path}" info.data
+        | Some info -> (env :> ISaveFiles).invoke $"{config.outDirectory}/{info.path}" info.data
 
 module UploadApp =
-    type ISendEvent = abstract member invoke : byte [] -> unit
-    type IReadAllBytes = abstract member invoke : string -> byte array
-    type IGetDb = abstract member invoke : unit -> State
-    type IGetFiles = abstract member invoke : string -> File list
+    type ISendEvent =
+        abstract member invoke: byte [] -> unit
+
+    type IReadAllBytes =
+        abstract member invoke: string -> byte array
+
+    type IGetDb =
+        abstract member invoke: unit -> State
+
+    type IGetFiles =
+        abstract member invoke: string -> File list
 
     let private uploadFile env (file: File) =
         let data = (env :> IReadAllBytes).invoke file.path
@@ -55,11 +62,9 @@ module Server =
     open Suave
     open Suave.Operators
 
-    let private handleGet (_offset: int64) =
-        failwith "???"
+    let private handleGet (_offset: int64) = failwith "???"
 
-    let private handlePost (_req: HttpRequest) =
-        failwith "???"
+    let private handlePost (_req: HttpRequest) = failwith "???"
 
     let main _ =
         choose [ Filters.GET
@@ -70,5 +75,4 @@ module Server =
         |> startWebServer defaultConfig
 
 [<EntryPoint>]
-let main _ =
-    0
+let main args = Application2.main args

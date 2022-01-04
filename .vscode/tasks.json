@@ -2,6 +2,54 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "start all",
+            "dependsOn": [
+                "start-server",
+                "start-downloader"
+            ],
+            "type": "shell",
+            "presentation": {
+                "reveal": "silent"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "start-uploader",
+            "command": "dotnet run u",
+            "options": {
+                "cwd": "src"
+            },
+            "type": "shell",
+            "presentation": {
+                "reveal": "silent"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "start-downloader",
+            "command": "dotnet run d",
+            "options": {
+                "cwd": "src"
+            },
+            "type": "shell",
+            "presentation": {
+                "reveal": "silent"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "start-server",
+            "command": "dotnet run s",
+            "options": {
+                "cwd": "src"
+            },
+            "type": "shell",
+            "presentation": {
+                "reveal": "silent"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "test",
             "command": "dotnet",
             "type": "shell",

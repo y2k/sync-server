@@ -38,36 +38,53 @@ module RemoteSyncer =
     open Suave.Filters
     open Suave.Operators
 
-    let private queue = ResizeArray<string * byte []>()
+    let private queue = Atom.atom Map.empty
 
-    let private handlePost (topic : string) (req: HttpRequest) =
-        queue.Add(topic, req.rawForm)
+    let private handlePost (topic: string) (req: HttpRequest) =
+        queue.update (fun xs ->
+            let q =
+                match Map.tryFind topic xs with
+                | Some q -> q
+                | None -> []
+
+            Map.add topic (q @ [ req.rawForm ]) xs)
+
         Successful.NO_CONTENT
 
-    let private handleGet ((topic : string), (_: int64)) =
-        match Seq.tryFindIndex (fun (t, _) -> t = topic) queue with
-        | Some index ->
-            let (_, c) = queue.[index]
-            queue.RemoveAt index
-            Successful.ok c
-        | None -> Successful.NO_CONTENT
+    let private handleGet ((topic: string), (_: int64)) =
+        queue.dispatch (fun xs ->
+            match Map.tryFind topic xs with
+            | Some (data :: q) -> Map.add topic q xs, Successful.ok data
+            | _ -> xs, Successful.NO_CONTENT)
 
     let startServer () =
         [ GET >=> pathScan "/api/%s/%i" handleGet
-          POST >=> pathScan "/api/%s" (fun t -> request (handlePost t)) ]
+          POST
+          >=> pathScan "/api/%s" (fun t -> request (handlePost t)) ]
         |> choose
         |> startWebServer defaultConfig
 
-    let receiveEvent domain (topic: string) =
+    let rec private getAsyncNotEmpty (url: string) =
         async {
             use client = new HttpClient()
 
-            let! response = client.GetAsync($"http://%s{domain}/api/%s{topic}/%i{0}") |> Async.AwaitTask
+            let! response = client.GetAsync url |> Async.AwaitTask
 
             let! bytes =
                 response.Content.ReadAsByteArrayAsync()
                 |> Async.AwaitTask
 
+            if (Array.length bytes > 0) then
+                return bytes
+            else
+                printfn "LOG: sleep 5 sec"
+                do! Async.Sleep 5_000
+                return! getAsyncNotEmpty url
+        }
+
+    let receiveEvent domain (topic: string) =
+        async {
+            let! bytes = getAsyncNotEmpty $"http://%s{domain}/api/%s{topic}/%i{0}"
             let p = FsPickler.CreateBinarySerializer()
             return p.UnPickle bytes
         }
@@ -93,17 +110,20 @@ module Downloader =
         interface Event
 
     type PersistentBlobCreated =
-        { name: string
+        { path: string
           content: Blob }
         interface Event
 
-    let handle (e: NewBlobCreated) : Event list =
+    let handle path (e: NewBlobCreated) : Event list =
         let name = IO.Path.GetFileName e.path
 
-        [ { name = name; content = e.blob }
+        [ { path = name; content = e.blob }
           { hash = e.blob.hash
             name = name
             tags = e.tags } ]
+
+module FileEventHandlers =
+    let foo (e: Downloader.PersistentBlobCreated) = failwith "???"
 
 module Uploader =
     type Config =
@@ -145,30 +165,79 @@ module Uploader =
 
 module Resolvers =
     module DatabaseResolver =
-        let getDb () : Uploader.Database = failwith "???"
+        let private state = Atom.atom { Uploader.Database.dirs = Map.empty }
+        let getDb () : Uploader.Database = state.Value
         let resolve f = f (getDb ())
 
     module ConfigResolver =
-        let getDb () : Uploader.Config =
-            { server = ""
-              sources = [ {| path = ""; tags = [] |} ] }
+        let getDb path : Uploader.Config =
+            { server = "localhost"
+              sources = [ {| path = path; tags = [] |} ] }
 
-        let resolve f = f (getDb ())
+        let resolve path f = f (getDb path)
 
 module Dispatcher =
-    let listenUpdate (_: #Event -> Event list) : unit Async = failwith "???"
-    let dispatch (_: Event) : unit = failwith "???"
+    let private atomls: (Event -> unit) list Atom.IAtom = Atom.atom []
 
-let main (args : string array) =
+    let listenUpdate (f: Event -> unit) : unit Async =
+        async {
+            atomls.update (fun xs -> f :: xs)
+
+            do!
+                Async.OnCancel (fun _ ->
+                    atomls.update (fun xs ->
+                        xs
+                        |> List.filter (fun l -> not <| LanguagePrimitives.PhysicalEquality l f)))
+                |> Async.Ignore
+        }
+
+    let dispatch (e: Event) =
+        atomls.Value |> List.iter (fun f -> f e)
+
+    let listenUpdateOnly (f: 'e -> Event list) : unit Async =
+        listenUpdate (function
+            | :? 'e as e2 ->
+                let newEvents = f e2
+                newEvents |> List.iter dispatch
+            | _ -> ())
+
+module SyncLogic =
+    let private start3 () =
+        Dispatcher.listenUpdate (fun e ->
+            match e with
+            | :? NewBlobCreated ->
+                RemoteSyncer.sendEvent "localhost:8080" "new-blob-created" e
+                |> Async.RunSynchronously
+            | _ -> ())
+
+    let private start2 =
+        async {
+            while true do
+                let! (e: NewBlobCreated) = RemoteSyncer.receiveEvent "localhost:8080" "new-blob-created"
+                Dispatcher.dispatch e
+        }
+
+    let start =
+        Async.Parallel [ start3 (); start2 ]
+        |> Async.Ignore
+
+let main (args: string array) =
     match args with
-    | [| "uploader" |] ->
-        Uploader.handleNewFile
-        |> Resolvers.ConfigResolver.resolve
-        |> Resolvers.DatabaseResolver.resolve
-        |> Dispatcher.listenUpdate
+    | [| "u" |] ->
+        Async.Parallel [ Uploader.handleNewFile
+                         |> (Resolvers.ConfigResolver.resolve "../__data/source")
+                         |> Resolvers.DatabaseResolver.resolve
+                         |> Dispatcher.listenUpdateOnly
+                         SyncLogic.start ]
         |> Async.RunSynchronously
         |> ignore
-    | [| "downloader" |] -> failwith "???"
-    | [| "server" |] -> failwith "???"
+    | [| "d" |] ->
+        Async.Parallel [ (Downloader.handle "../__data/target")
+                         |> Dispatcher.listenUpdateOnly
+                         SyncLogic.start ]
+        |> Async.RunSynchronously
+        |> ignore
+    | [| "s" |] -> RemoteSyncer.startServer ()
     | _ -> ()
+
     0

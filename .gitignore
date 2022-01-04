@@ -5,3 +5,4 @@ obj/
 *.ipynb
 global.json
 .ionide/
+__data/
