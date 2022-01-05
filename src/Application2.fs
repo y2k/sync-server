@@ -6,19 +6,15 @@ type Event =
     interface
     end
 
+module LogEventHandler =
+    let handle prefix (e: Event) =
+        printfn "(%s) EVENT: %s %O" prefix (e.GetType().Name) e
+
 type NewFileCreated =
     { path: string
       dir: string
       lastChanged: DateTime }
     interface Event
-
-module FileWatcher =
-    let handle (dir: string) =
-        IO.Directory.GetFiles dir
-        |> Seq.map (fun path ->
-            { path = path
-              dir = dir
-              lastChanged = IO.File.GetLastWriteTime(path) })
 
 type Blob =
     { path: string
@@ -57,6 +53,12 @@ module RemoteSyncer =
             | Some (data :: q) -> Map.add topic q xs, Successful.ok data
             | _ -> xs, Successful.NO_CONTENT)
 
+    let logRoute next =
+        request (fun r ->
+            printfn "LOG: request = %O" r
+            succeed)
+        >=> next
+
     let startServer () =
         [ GET >=> pathScan "/api/%s/%i" handleGet
           POST
@@ -82,19 +84,21 @@ module RemoteSyncer =
                 return! getAsyncNotEmpty url
         }
 
-    let receiveEvent domain (topic: string) =
+    let receiveEvent domain _password (topic: string) =
         async {
             let! bytes = getAsyncNotEmpty $"http://%s{domain}/api/%s{topic}/%i{0}"
             let p = FsPickler.CreateBinarySerializer()
             return p.UnPickle bytes
         }
 
-    let sendEvent domain (topic: string) t =
+    let sendEvent domain _password (topic: string) t =
         async {
             let p = FsPickler.CreateBinarySerializer()
             let bytes = p.Pickle t
 
             use client = new HttpClient()
+
+            printfn "LOG: POST '%O' %O" topic (bytes.Length)
 
             do!
                 client.PostAsync($"http://%s{domain}/api/%s{topic}", new ByteArrayContent(bytes))
@@ -152,7 +156,7 @@ module Uploader =
     let handleNewFile (config: Config) (db: Database) (event: NewFileCreated) : Event list =
         let lastChanged = getLastChangedForDir db event.dir
 
-        if lastChanged > event.lastChanged then
+        if event.lastChanged > lastChanged then
             [ { path = event.path
                 tags = getTags config event.dir
                 blob =
@@ -167,7 +171,7 @@ module Resolvers =
     module DatabaseResolver =
         let private state = Atom.atom { Uploader.Database.dirs = Map.empty }
         let getDb () : Uploader.Database = state.Value
-        let resolve f = f (getDb ())
+        let resolve f a = f (getDb ()) a
 
     module ConfigResolver =
         let getDb path : Uploader.Config =
@@ -179,62 +183,77 @@ module Resolvers =
 module Dispatcher =
     let private atomls: (Event -> unit) list Atom.IAtom = Atom.atom []
 
-    let listenUpdate (f: Event -> unit) : unit Async =
+    let listenUpdates (f: Event -> unit) =
         async {
             atomls.update (fun xs -> f :: xs)
 
-            do!
+            use! __ =
                 Async.OnCancel (fun _ ->
                     atomls.update (fun xs ->
                         xs
                         |> List.filter (fun l -> not <| LanguagePrimitives.PhysicalEquality l f)))
-                |> Async.Ignore
+
+            do! Async.Sleep -1
         }
 
     let dispatch (e: Event) =
         atomls.Value |> List.iter (fun f -> f e)
 
     let listenUpdateOnly (f: 'e -> Event list) : unit Async =
-        listenUpdate (function
+        listenUpdates (function
             | :? 'e as e2 ->
                 let newEvents = f e2
                 newEvents |> List.iter dispatch
             | _ -> ())
 
+module FileWatcher =
+    let handle (dir: string) =
+        async {
+            do! Async.Sleep 500
+
+            IO.Directory.GetFiles dir
+            |> Seq.map (fun path ->
+                { path = path
+                  dir = dir
+                  lastChanged = IO.File.GetLastWriteTime(path) })
+            |> Seq.iter Dispatcher.dispatch
+        }
+
 module SyncLogic =
-    let private start3 () =
-        Dispatcher.listenUpdate (fun e ->
+    let sendEventsToServer =
+        Dispatcher.listenUpdates (fun e ->
             match e with
             | :? NewBlobCreated ->
-                RemoteSyncer.sendEvent "localhost:8080" "new-blob-created" e
+                RemoteSyncer.sendEvent "localhost:8080" "7e1195e0bbd0" "new-blob-created" e
                 |> Async.RunSynchronously
             | _ -> ())
 
-    let private start2 =
+    let getEventsFromServer =
         async {
             while true do
-                let! (e: NewBlobCreated) = RemoteSyncer.receiveEvent "localhost:8080" "new-blob-created"
+                let! (e: Event) = RemoteSyncer.receiveEvent "localhost:8080" "7e1195e0bbd0" "new-blob-created"
                 Dispatcher.dispatch e
         }
-
-    let start =
-        Async.Parallel [ start3 (); start2 ]
-        |> Async.Ignore
 
 let main (args: string array) =
     match args with
     | [| "u" |] ->
         Async.Parallel [ Uploader.handleNewFile
-                         |> (Resolvers.ConfigResolver.resolve "../__data/source")
+                         |> (Resolvers.ConfigResolver.resolve "__data/source")
                          |> Resolvers.DatabaseResolver.resolve
                          |> Dispatcher.listenUpdateOnly
-                         SyncLogic.start ]
+                         FileWatcher.handle "__data/source"
+                         SyncLogic.sendEventsToServer
+                         LogEventHandler.handle "upload"
+                         |> Dispatcher.listenUpdates ]
         |> Async.RunSynchronously
         |> ignore
     | [| "d" |] ->
-        Async.Parallel [ (Downloader.handle "../__data/target")
+        Async.Parallel [ Downloader.handle "__data/target"
                          |> Dispatcher.listenUpdateOnly
-                         SyncLogic.start ]
+                         SyncLogic.getEventsFromServer
+                         LogEventHandler.handle "download"
+                         |> Dispatcher.listenUpdates ]
         |> Async.RunSynchronously
         |> ignore
     | [| "s" |] -> RemoteSyncer.startServer ()

@@ -5,6 +5,7 @@
             "label": "start all",
             "dependsOn": [
                 "start-server",
+                "start-uploader",
                 "start-downloader"
             ],
             "type": "shell",
@@ -15,10 +16,7 @@
         },
         {
             "label": "start-uploader",
-            "command": "dotnet run u",
-            "options": {
-                "cwd": "src"
-            },
+            "command": "src/bin/Debug/net6.0/app u",
             "type": "shell",
             "presentation": {
                 "reveal": "silent"
@@ -27,10 +25,7 @@
         },
         {
             "label": "start-downloader",
-            "command": "dotnet run d",
-            "options": {
-                "cwd": "src"
-            },
+            "command": "src/bin/Debug/net6.0/app d",
             "type": "shell",
             "presentation": {
                 "reveal": "silent"
@@ -39,10 +34,7 @@
         },
         {
             "label": "start-server",
-            "command": "dotnet run s",
-            "options": {
-                "cwd": "src"
-            },
+            "command": "src/bin/Debug/net6.0/app s",
             "type": "shell",
             "presentation": {
                 "reveal": "silent"
