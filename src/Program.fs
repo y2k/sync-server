@@ -6,10 +6,6 @@ type Event =
     interface
     end
 
-module LogEventHandler =
-    let handle prefix (e: Event) =
-        printfn "(%s) EVENT: %s %O" prefix (e.GetType().Name) e
-
 type NewFileCreated =
     { path: string
       dir: string
@@ -43,6 +39,68 @@ type NewBlobCreated =
       tags: string list
       blob: Blob }
     interface Event
+
+module Uploader =
+    type Config =
+        { server: string
+          sources: {| path: string; tags: string list |} list }
+
+    type Database = { dirs: Map<string, DateTime> }
+
+    let getLastChangedForDir db dir =
+        Map.tryFind dir db.dirs
+        |> Option.defaultValue DateTime.MinValue
+
+    type DatabaseChanged =
+        { db: Database }
+        interface Event
+
+    let private getTags (config: Config) dir =
+        config.sources
+        |> Seq.tryPick (fun x ->
+            if x.path = dir then
+                Some x.tags
+            else
+                None)
+        |> Option.defaultValue []
+
+    let private updateDirLastChanged (db: Database) path (date: DateTime) =
+        { db with dirs = Map.add path date db.dirs }
+
+    let handleNewFile (config: Config) (db: Database) (event: NewFileCreated) : Event list =
+        let lastChanged = getLastChangedForDir db event.dir
+
+        if event.lastChanged > lastChanged then
+            [ { path = event.path
+                tags = getTags config event.dir
+                blob = { path = event.path; data = None } }
+              { db = updateDirLastChanged db event.dir event.lastChanged } ]
+        else
+            []
+
+module Downloader =
+    type RdfItemCreated =
+        { attrs: (string * string) list }
+        interface Event
+
+    type PersistentBlobCreated =
+        { path: string
+          content: Blob }
+        interface Event
+
+    let handle path (e: NewBlobCreated) : Event list =
+        let name = IO.Path.GetFileName e.path
+        let locPath = IO.Path.Combine(path, name)
+
+        [ { attrs =
+              [ "name", name
+                "type", "video"
+                yield! e.tags |> List.map (fun t -> "tag", t) ] }
+          { path = locPath; content = e.blob } ]
+
+//
+//
+//
 
 module RemoteSyncer =
     open System.Net.Http
@@ -150,66 +208,12 @@ module RemoteSyncer =
                 |> Async.Ignore
         }
 
-module Downloader =
-    type PersistentEventCreated =
-        { name: string
-          tags: string list }
-        interface Event
-
-    type PersistentBlobCreated =
-        { path: string
-          content: Blob }
-        interface Event
-
-    let handle path (e: NewBlobCreated) : Event list =
-        let name = IO.Path.GetFileName e.path
-
-        [ { path = name; content = e.blob }
-          { name = name; tags = e.tags } ]
-
-module FileEventHandlers =
-    let foo (e: Downloader.PersistentBlobCreated) = failwith "???"
-
-module Uploader =
-    type Config =
-        { server: string
-          sources: {| path: string; tags: string list |} list }
-
-    type Database = { dirs: Map<string, DateTime> }
-
-    let getLastChangedForDir db dir =
-        Map.tryFind dir db.dirs
-        |> Option.defaultValue DateTime.MinValue
-
-    type DatabaseChanged =
-        { db: Database }
-        interface Event
-
-    let getTags (config: Config) dir =
-        config.sources
-        |> Seq.tryPick (fun x ->
-            if x.path = dir then
-                Some x.tags
-            else
-                None)
-        |> Option.defaultValue []
-
-    let handleNewFile (config: Config) (db: Database) (event: NewFileCreated) : Event list =
-        let lastChanged = getLastChangedForDir db event.dir
-
-        if event.lastChanged > lastChanged then
-            [ { path = event.path
-                tags = getTags config event.dir
-                blob = { path = event.path; data = None } }
-              { db = db } ]
-        else
-            []
-
 module Resolvers =
     module DatabaseResolver =
         let private state = Atom.atom { Uploader.Database.dirs = Map.empty }
         let getDb () : Uploader.Database = state.Value
         let decorate f args = f (getDb ()) args
+        let handle (e: Uploader.DatabaseChanged) = state.update (fun _ -> e.db)
 
     module ConfigResolver =
         let getDb path : Uploader.Config =
@@ -237,12 +241,12 @@ module Dispatcher =
     let dispatch (e: Event) =
         atomls.Value |> List.iter (fun f -> f e)
 
-    let listenUpdateOnly (f: 'e -> Event list) : unit Async =
-        listenUpdates (function
-            | :? 'e as e2 ->
-                let newEvents = f e2
-                newEvents |> List.iter dispatch
-            | _ -> ())
+    let handleEvent (f: 'e -> Event list) (e: Event) =
+        match e with
+        | :? 'e as e2 ->
+            let newEvents = f e2
+            newEvents |> List.iter dispatch
+        | _ -> ()
 
 module FileWatcher =
     let handle (dir: string) =
@@ -258,39 +262,50 @@ module FileWatcher =
         }
 
 module SyncLogic =
-    let sendEventsToServer =
+    let sendEventsToServer pass =
         Dispatcher.listenUpdates (fun e ->
             match e with
             | :? NewBlobCreated ->
-                RemoteSyncer.sendEvent "localhost:8080" "7e1195e0bbd0" "new-blob-created" e
+                RemoteSyncer.sendEvent "localhost:8080" pass "new-blob-created" e
                 |> Async.RunSynchronously
             | _ -> ())
 
-    let getEventsFromServer =
+    let getEventsFromServer pass =
         async {
             while true do
-                let! (e: Event) = RemoteSyncer.receiveEvent "localhost:8080" "7e1195e0bbd0" "new-blob-created"
+                let! (e: Event) = RemoteSyncer.receiveEvent "localhost:8080" pass "new-blob-created"
                 Dispatcher.dispatch e
         }
 
+module LogEventHandler =
+    let handle _prefix (e: Event) =
+        printfn "(EVENT) %s\n%O\n" (e.GetType().Name) e
+
 [<EntryPoint>]
-let main (args: string array) =
+let main args =
+    let pass = "7e1195e0bbd0"
+
     match args with
     | [| "u" |] ->
         Async.Parallel [ Uploader.handleNewFile
                          |> (Resolvers.ConfigResolver.resolve "__data/source")
                          |> Resolvers.DatabaseResolver.decorate
-                         |> Dispatcher.listenUpdateOnly
+                         |> Dispatcher.handleEvent
+                         |> Dispatcher.listenUpdates
+                         (Resolvers.DatabaseResolver.handle >> (fun _ -> []))
+                         |> Dispatcher.handleEvent
+                         |> Dispatcher.listenUpdates
                          FileWatcher.handle "__data/source"
-                         SyncLogic.sendEventsToServer
+                         //  SyncLogic.sendEventsToServer pass
                          LogEventHandler.handle "upload"
                          |> Dispatcher.listenUpdates ]
         |> Async.RunSynchronously
         |> ignore
     | [| "d" |] ->
         Async.Parallel [ Downloader.handle "__data/target"
-                         |> Dispatcher.listenUpdateOnly
-                         SyncLogic.getEventsFromServer
+                         |> Dispatcher.handleEvent
+                         |> Dispatcher.listenUpdates
+                         SyncLogic.getEventsFromServer pass
                          LogEventHandler.handle "download"
                          |> Dispatcher.listenUpdates ]
         |> Async.RunSynchronously
