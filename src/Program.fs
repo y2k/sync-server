@@ -281,6 +281,52 @@ module LogEventHandler =
     let handle _prefix (e: Event) =
         printfn "(EVENT) %s\n%O\n" (e.GetType().Name) e
 
+module RdfStorage =
+    open Microsoft.Data.Sqlite
+    open Dapper
+
+    [<CLIMutable>]
+    type Rdf =
+        { subject_id: int64
+          relation: string
+          object_text: string }
+
+    let handle dbpath =
+        let conn = new SqliteConnection $"DataSource=%s{dbpath}"
+        conn.Open()
+
+        conn.Execute
+            """CREATE TABLE IF NOT EXISTS main (
+            subject_id integer NOT NULL,
+            relation text,
+            relation_id integer,
+            object_text text,
+            object_id integer
+          )"""
+        |> ignore
+
+        fun (e: Downloader.RdfItemCreated) ->
+            use t = conn.BeginTransaction()
+
+            let subjectId =
+                conn.QueryFirstOrDefault<int64>("SELECT subject_id FROM main ORDER BY subject_id DESC LIMIT 1")
+                + 1L
+
+            for (relation, object) in e.attrs do
+                conn.Execute(
+                    "INSERT INTO main (subject_id, relation, object_text) VALUES (@subject_id, @relation, @object_text)",
+                    { subject_id = subjectId
+                      relation = relation
+                      object_text = object }
+                )
+                |> ignore
+
+            t.Commit()
+
+module FileDispatcher =
+    let handle (e: Downloader.PersistentBlobCreated) =
+        IO.File.WriteAllBytes(e.path, e.content.data |> Option.get)
+
 [<EntryPoint>]
 let main args =
     let pass = "7e1195e0bbd0"
@@ -296,13 +342,19 @@ let main args =
                          |> Dispatcher.handleEvent
                          |> Dispatcher.listenUpdates
                          FileWatcher.handle "__data/source"
-                         //  SyncLogic.sendEventsToServer pass
+                         SyncLogic.sendEventsToServer pass
                          LogEventHandler.handle "upload"
                          |> Dispatcher.listenUpdates ]
         |> Async.RunSynchronously
         |> ignore
     | [| "d" |] ->
         Async.Parallel [ Downloader.handle "__data/target"
+                         |> Dispatcher.handleEvent
+                         |> Dispatcher.listenUpdates
+                         (RdfStorage.handle "__data/rdf.db" >> (fun _ -> []))
+                         |> Dispatcher.handleEvent
+                         |> Dispatcher.listenUpdates
+                         (FileDispatcher.handle >> (fun _ -> []))
                          |> Dispatcher.handleEvent
                          |> Dispatcher.listenUpdates
                          SyncLogic.getEventsFromServer pass
