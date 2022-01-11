@@ -36,8 +36,9 @@ type Blob =
 
 type NewBlobCreated =
     { path: string
+      category: string
       tags: string list
-      blob: Blob }
+      blob: Blob option }
     interface Event
 
 module Uploader =
@@ -72,8 +73,9 @@ module Uploader =
 
         if event.lastChanged > lastChanged then
             [ { path = event.path
+                category = "video"
                 tags = getTags config event.dir
-                blob = { path = event.path; data = None } }
+                blob = Some { path = event.path; data = None } }
               { db = updateDirLastChanged db event.dir event.lastChanged } ]
         else
             []
@@ -92,15 +94,68 @@ module Downloader =
         let name = IO.Path.GetFileName e.path
         let locPath = IO.Path.Combine(path, name)
 
-        [ { attrs =
-              [ "name", name
-                "type", "video"
-                yield! e.tags |> List.map (fun t -> "tag", t) ] }
-          { path = locPath; content = e.blob } ]
+        [ yield
+              { attrs =
+                  [ "name", name
+                    "type", e.category
+                    yield! e.tags |> List.map (fun t -> "tag", t) ] }
+          match e.blob with
+          | Some blob -> yield { path = locPath; content = blob }
+          | None -> () ]
 
 //
 //
 //
+
+module AdminServer =
+    open FsHtml
+
+    let handleAddUrl (form: (string * string option) list) : Event list =
+        let fm =
+            form
+            |> Seq.map (fun (k, v) -> k, v |> Option.defaultValue "")
+            |> Map.ofSeq
+
+        match List.tryFind (fun (k, _) -> k = "url") form with
+        | Some (_, Some url) ->
+            [ { path = url
+                category = "url"
+                tags = []
+                blob = None } ]
+        | _ -> []
+
+    let main =
+        html [] [
+            head [] [
+                title [] [ str "Control panel" ]
+                link [ "rel" %= "stylesheet"
+                       "href"
+                       %= "https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" ] []
+                style [] [
+                    """
+.form { display: flex; flex-direction: column; width: 500px; margin: auto; padding-top: 16px }
+.form > *:not(:last-child) { margin-bottom: 16px; }
+                    """
+                    |> str
+                ]
+            ]
+            body [] [
+                form [ "class" %= "form"
+                       "method" %= "post" ] [
+                    // h1 [] [ str "Add LINK" ]
+                    input [ "class" %= "input"
+                            "placeholder" %= "URL"
+                            "name" %= "url" ] []
+                    input [ "class" %= "input"
+                            "placeholder" %= "Title"
+                            "name" %= "title" ] []
+                    button [ "class" %= "button" ] [
+                        str "Add"
+                    ]
+                ]
+            ]
+        ]
+        |> toString
 
 module RemoteSyncer =
     open System.Net.Http
@@ -133,10 +188,20 @@ module RemoteSyncer =
             succeed)
         >=> next
 
-    let startServer () =
+    let startServer pass dispatch =
         [ GET >=> pathScan "/api/%s/%i" handleGet
           POST
-          >=> pathScan "/api/%s" (fun t -> request (handlePost t)) ]
+          >=> pathScan "/api/%s" (fun t -> request (handlePost t))
+          Authentication.authenticateBasic
+              ((=) ("admin", pass))
+              (choose [ POST
+                        >=> path "/admin"
+                        >=> request (fun r ->
+                            dispatch (AdminServer.handleAddUrl r.form)
+                            Successful.OK AdminServer.main)
+                        GET
+                        >=> path "/admin"
+                        >=> Successful.OK AdminServer.main ]) ]
         |> choose
         |> startWebServer defaultConfig
 
@@ -362,7 +427,12 @@ let main args =
                          |> Dispatcher.listenUpdates ]
         |> Async.RunSynchronously
         |> ignore
-    | [| "s" |] -> RemoteSyncer.startServer ()
+    | [| "s" |] ->
+        Async.Parallel [ async { RemoteSyncer.startServer pass (List.iter Dispatcher.dispatch) }
+                         LogEventHandler.handle ()
+                         |> Dispatcher.listenUpdates ]
+        |> Async.RunSynchronously
+        |> ignore
     | _ -> ()
 
     0
