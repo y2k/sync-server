@@ -7,8 +7,6 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "app", "src\app.fsproj", "{D
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "test", "test\test.fsproj", "{76CBFC8F-B36B-48B6-99FD-22315E03A06F}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "server", "server\server.fsproj", "{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -46,17 +44,5 @@ Global
 		{76CBFC8F-B36B-48B6-99FD-22315E03A06F}.Release|x64.Build.0 = Release|Any CPU
 		{76CBFC8F-B36B-48B6-99FD-22315E03A06F}.Release|x86.ActiveCfg = Release|Any CPU
 		{76CBFC8F-B36B-48B6-99FD-22315E03A06F}.Release|x86.Build.0 = Release|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Debug|x64.Build.0 = Debug|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Debug|x86.Build.0 = Debug|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Release|x64.ActiveCfg = Release|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Release|x64.Build.0 = Release|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Release|x86.ActiveCfg = Release|Any CPU
-		{1DCD846D-FEA0-4C49-BEED-DCA8A6AF515D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -111,15 +111,16 @@ module AdminServer =
     open FsHtml
 
     let handleAddUrl (form: (string * string option) list) : Event list =
-        let fm =
-            form
-            |> Seq.map (fun (k, v) -> k, v |> Option.defaultValue "")
-            |> Map.ofSeq
+        printfn "LOG :: form = %A" form
 
-        match List.tryFind (fun (k, _) -> k = "url") form with
-        | Some (_, Some url) ->
+        let getValue key =
+            List.tryFind (fun (k, _) -> k = key) form
+            |> Option.bind snd
+
+        match getValue "url", getValue "type" with
+        | Some url, Some t ->
             [ { path = url
-                category = "url"
+                category = t
                 tags = []
                 blob = None } ]
         | _ -> []
@@ -142,13 +143,29 @@ module AdminServer =
             body [] [
                 form [ "class" %= "form"
                        "method" %= "post" ] [
-                    // h1 [] [ str "Add LINK" ]
                     input [ "class" %= "input"
                             "placeholder" %= "URL"
                             "name" %= "url" ] []
-                    input [ "class" %= "input"
-                            "placeholder" %= "Title"
-                            "name" %= "title" ] []
+                    textarea [ "class" %= "textarea"
+                               "placeholder" %= "Title"
+                               "name" %= "title" ] []
+                    div [ "class" %= "field" ] [
+                        label [ "class" %= "label" ] [
+                            str "Link type"
+                        ]
+                        div [ "class" %= "control" ] [
+                            div [ "class" %= "select" ] [
+                                select [ "name" %= "type" ] [
+                                    option [ "value" %= "watch_late" ] [
+                                        str "Watch late (youtube)"
+                                    ]
+                                    option [ "value" %= "url" ] [
+                                        str "URL"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
                     button [ "class" %= "button" ] [
                         str "Add"
                     ]
@@ -327,18 +344,22 @@ module FileWatcher =
         }
 
 module SyncLogic =
-    let sendEventsToServer pass =
+    let sendEventsToServer' domain pass (e: NewBlobCreated) =
+        RemoteSyncer.sendEvent domain pass "new-blob-created" e
+        |> Async.RunSynchronously
+
+    let sendEventsToServer domain pass =
         Dispatcher.listenUpdates (fun e ->
             match e with
             | :? NewBlobCreated ->
-                RemoteSyncer.sendEvent "localhost:8080" pass "new-blob-created" e
+                RemoteSyncer.sendEvent domain pass "new-blob-created" e
                 |> Async.RunSynchronously
             | _ -> ())
 
-    let getEventsFromServer pass =
+    let getEventsFromServer domain pass =
         async {
             while true do
-                let! (e: Event) = RemoteSyncer.receiveEvent "localhost:8080" pass "new-blob-created"
+                let! (e: NewBlobCreated) = RemoteSyncer.receiveEvent domain pass "new-blob-created"
                 Dispatcher.dispatch e
         }
 
@@ -396,6 +417,11 @@ module FileDispatcher =
 let main args =
     let pass = "7e1195e0bbd0"
 
+    let inline handleEvents_ f =
+        (f >> (fun _ -> []))
+        |> Dispatcher.handleEvent
+        |> Dispatcher.listenUpdates
+
     match args with
     | [| "u" |] ->
         Async.Parallel [ Uploader.handleNewFile
@@ -403,34 +429,26 @@ let main args =
                          |> Resolvers.DatabaseResolver.decorate
                          |> Dispatcher.handleEvent
                          |> Dispatcher.listenUpdates
-                         (Resolvers.DatabaseResolver.handle >> (fun _ -> []))
-                         |> Dispatcher.handleEvent
-                         |> Dispatcher.listenUpdates
+                         handleEvents_ Resolvers.DatabaseResolver.handle
                          FileWatcher.handle "__data/source"
-                         SyncLogic.sendEventsToServer pass
-                         LogEventHandler.handle "upload"
-                         |> Dispatcher.listenUpdates ]
+                         SyncLogic.sendEventsToServer "localhost:8080" pass
+                         Dispatcher.listenUpdates (LogEventHandler.handle "upload") ]
         |> Async.RunSynchronously
         |> ignore
     | [| "d" |] ->
         Async.Parallel [ Downloader.handle "__data/target"
                          |> Dispatcher.handleEvent
                          |> Dispatcher.listenUpdates
-                         (RdfStorage.handle "__data/rdf.db" >> (fun _ -> []))
-                         |> Dispatcher.handleEvent
-                         |> Dispatcher.listenUpdates
-                         (FileDispatcher.handle >> (fun _ -> []))
-                         |> Dispatcher.handleEvent
-                         |> Dispatcher.listenUpdates
-                         SyncLogic.getEventsFromServer pass
-                         LogEventHandler.handle "download"
-                         |> Dispatcher.listenUpdates ]
+                         handleEvents_ (RdfStorage.handle "__data/rdf.db")
+                         handleEvents_ FileDispatcher.handle
+                         SyncLogic.getEventsFromServer "localhost:8080" pass
+                         Dispatcher.listenUpdates (LogEventHandler.handle "download") ]
         |> Async.RunSynchronously
         |> ignore
     | [| "s" |] ->
         Async.Parallel [ async { RemoteSyncer.startServer pass (List.iter Dispatcher.dispatch) }
-                         LogEventHandler.handle ()
-                         |> Dispatcher.listenUpdates ]
+                         Dispatcher.listenUpdates (LogEventHandler.handle ())
+                         handleEvents_ (SyncLogic.sendEventsToServer' "localhost:8080" pass) ]
         |> Async.RunSynchronously
         |> ignore
     | _ -> ()
