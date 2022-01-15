@@ -14,25 +14,7 @@ type NewFileCreated =
 
 open MBrace.FsPickler
 
-[<CustomPickler>]
-type Blob =
-    { path: string
-      data: byte [] option }
-    static member CreatePickler(resolver: IPicklerResolver) =
-        let sr = resolver.Resolve<string>()
-        let ar = resolver.Resolve<byte array>()
-
-        Pickler.FromPrimitives(
-            (fun rs ->
-                { path = sr.Read rs "path"
-                  data = Some(ar.Read rs "data") }),
-            (fun ws c ->
-                sr.Write ws "path" c.path
-
-                match c.data with
-                | Some d -> ar.Write ws "data" d
-                | None -> ar.Write ws "data" (IO.File.ReadAllBytes c.path))
-        )
+type Blob = { path: string; data: byte [] option }
 
 type NewBlobCreated =
     { path: string
@@ -174,6 +156,24 @@ module AdminServer =
         ]
         |> toString
 
+    open Suave
+    open Suave.Operators
+    open System.Net
+
+    let startServer dispatch =
+        [ Filters.POST
+          >=> Filters.path "/admin"
+          >=> request (fun r ->
+              dispatch (handleAddUrl r.form)
+              Successful.OK main)
+          Filters.GET
+          >=> Filters.path "/admin"
+          >=> Successful.OK main ]
+        |> choose
+        |> startWebServerAsync
+            { defaultConfig with bindings = [ HttpBinding.create HTTP (IPAddress.Parse "0.0.0.0") 8081us ] }
+        |> snd
+
 module RemoteSyncer =
     open System.Net.Http
     open Suave
@@ -205,22 +205,13 @@ module RemoteSyncer =
             succeed)
         >=> next
 
-    let startServer pass dispatch =
+    let startServer =
         [ GET >=> pathScan "/api/%s/%i" handleGet
           POST
-          >=> pathScan "/api/%s" (fun t -> request (handlePost t))
-          Authentication.authenticateBasic
-              ((=) ("admin", pass))
-              (choose [ POST
-                        >=> path "/admin"
-                        >=> request (fun r ->
-                            dispatch (AdminServer.handleAddUrl r.form)
-                            Successful.OK AdminServer.main)
-                        GET
-                        >=> path "/admin"
-                        >=> Successful.OK AdminServer.main ]) ]
+          >=> pathScan "/api/%s" (handlePost >> request) ]
         |> choose
-        |> startWebServer defaultConfig
+        |> startWebServerAsync defaultConfig
+        |> snd
 
     let rec private getAsyncNotEmpty (url: string) =
         async {
@@ -269,17 +260,17 @@ module RemoteSyncer =
         cryptStream.CopyTo(outStream)
         outStream.ToArray()
 
-    let receiveEvent domain password (topic: string) =
+    let receiveEvent domain password (topic: string) picker =
         async {
             let! bytes = getAsyncNotEmpty $"http://%s{domain}/api/%s{topic}/%i{0}"
             let p = FsPickler.CreateBinarySerializer()
-            return p.UnPickle(decrypt password bytes)
+            return p.UnPickle(decrypt password bytes, picker p.Resolver)
         }
 
-    let sendEvent domain password (topic: string) t =
+    let sendEvent domain password (topic: string) t pickler =
         async {
             let p = FsPickler.CreateBinarySerializer()
-            let bytes = p.Pickle t
+            let bytes = p.Pickle(t, pickler p.Resolver)
 
             use client = new HttpClient()
             let content = new ByteArrayContent(encrypt password bytes)
@@ -344,22 +335,43 @@ module FileWatcher =
         }
 
 module SyncLogic =
-    let sendEventsToServer' domain pass (e: NewBlobCreated) =
-        RemoteSyncer.sendEvent domain pass "new-blob-created" e
-        |> Async.RunSynchronously
+    open MBrace.FsPickler.Combinators
 
-    let sendEventsToServer domain pass =
-        Dispatcher.listenUpdates (fun e ->
-            match e with
-            | :? NewBlobCreated ->
-                RemoteSyncer.sendEvent domain pass "new-blob-created" e
-                |> Async.RunSynchronously
-            | _ -> ())
+    let private createPickler (resolver: IPicklerResolver) =
+        let sr = resolver.Resolve<string>()
+        let ar = resolver.Resolve<byte array>()
+
+        Pickler.FromPrimitives(
+            (fun rs ->
+                { path = sr.Read rs "path"
+                  data = Some(ar.Read rs "data") }),
+            (fun ws c ->
+                sr.Write ws "path" c.path
+
+                match c.data with
+                | Some d -> ar.Write ws "data" d
+                | None -> ar.Write ws "data" (IO.File.ReadAllBytes c.path))
+        )
+
+    let private pickerNewBlobCreated r : Pickler<NewBlobCreated> =
+        Pickler.product (fun p c t b ->
+            { path = p
+              category = c
+              tags = t
+              blob = b })
+        ^+ Pickler.field (fun f -> f.path) Pickler.string
+           ^+ Pickler.field (fun f -> f.category) Pickler.string
+              ^+ Pickler.field (fun f -> f.tags) (Pickler.list Pickler.string)
+                 ^. Pickler.field (fun f -> f.blob) (Pickler.option (createPickler r))
+
+    let sendEventsToServer domain pass (e: NewBlobCreated) =
+        RemoteSyncer.sendEvent domain pass "new-blob-created" e pickerNewBlobCreated
+        |> Async.RunSynchronously
 
     let getEventsFromServer domain pass =
         async {
             while true do
-                let! (e: NewBlobCreated) = RemoteSyncer.receiveEvent domain pass "new-blob-created"
+                let! (e: NewBlobCreated) = RemoteSyncer.receiveEvent domain pass "new-blob-created" pickerNewBlobCreated
                 Dispatcher.dispatch e
         }
 
@@ -410,7 +422,7 @@ module RdfStorage =
             t.Commit()
 
 module FileDispatcher =
-    let handle (e: Downloader.PersistentBlobCreated) =
+    let saveFileHandler (e: Downloader.PersistentBlobCreated) =
         IO.File.WriteAllBytes(e.path, e.content.data |> Option.get)
 
 [<EntryPoint>]
@@ -431,26 +443,22 @@ let main args =
                          |> Dispatcher.listenUpdates
                          handleEvents_ Resolvers.DatabaseResolver.handle
                          FileWatcher.handle "__data/source"
-                         SyncLogic.sendEventsToServer "localhost:8080" pass
-                         Dispatcher.listenUpdates (LogEventHandler.handle "upload") ]
-        |> Async.RunSynchronously
-        |> ignore
+                         handleEvents_ (SyncLogic.sendEventsToServer "localhost:8080" pass)
+                         Dispatcher.listenUpdates (LogEventHandler.handle "upload")
+                         AdminServer.startServer (List.iter Dispatcher.dispatch) ]
+        |> Async.Ignore
     | [| "d" |] ->
         Async.Parallel [ Downloader.handle "__data/target"
                          |> Dispatcher.handleEvent
                          |> Dispatcher.listenUpdates
                          handleEvents_ (RdfStorage.handle "__data/rdf.db")
-                         handleEvents_ FileDispatcher.handle
+                         handleEvents_ FileDispatcher.saveFileHandler
                          SyncLogic.getEventsFromServer "localhost:8080" pass
                          Dispatcher.listenUpdates (LogEventHandler.handle "download") ]
-        |> Async.RunSynchronously
-        |> ignore
-    | [| "s" |] ->
-        Async.Parallel [ async { RemoteSyncer.startServer pass (List.iter Dispatcher.dispatch) }
-                         Dispatcher.listenUpdates (LogEventHandler.handle ())
-                         handleEvents_ (SyncLogic.sendEventsToServer' "localhost:8080" pass) ]
-        |> Async.RunSynchronously
-        |> ignore
-    | _ -> ()
+        |> Async.Ignore
+    | [| "s" |] -> RemoteSyncer.startServer
+    | _ -> async.Zero()
+    |> Async.RunSynchronously
+    |> ignore
 
     0
