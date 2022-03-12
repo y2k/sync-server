@@ -236,9 +236,12 @@ module RemoteSyncer =
     open System.Text
 
     let private makeAes (key: string) =
-        Aes.Create(Key = MD5.HashData(Encoding.UTF8.GetBytes(key)), IV = Array.zeroCreate 16)
+        let kb = Encoding.UTF8.GetBytes(key)
+        let rawKey = SHA256.HashData(kb) |> Array.take 16
+        let iv: byte [] = Array.zeroCreate 16
+        Aes.Create(Key = rawKey, IV = iv)
 
-    let private encrypt (key: string) (data: byte []) =
+    let encrypt (key: string) (data: byte []) =
         use aes = makeAes key
         use outStream = new MemoryStream()
 
@@ -249,7 +252,7 @@ module RemoteSyncer =
         cryptStream.FlushFinalBlock()
         outStream.ToArray()
 
-    let private decrypt (key: string) (data: byte []) =
+    let decrypt (key: string) (data: byte []) =
         use aes = makeAes key
         use inStream = new MemoryStream(data)
         use outStream = new MemoryStream()
