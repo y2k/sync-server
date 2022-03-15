@@ -175,6 +175,7 @@ module AdminServer =
         |> snd
 
 module RemoteSyncer =
+    open System.Net
     open System.Net.Http
     open Suave
     open Suave.Filters
@@ -206,11 +207,17 @@ module RemoteSyncer =
         >=> next
 
     let startServer =
+        let config =
+            { defaultConfig with bindings = [ HttpBinding.create HTTP (IPAddress.Parse "0.0.0.0") 8080us ] }
+
         [ GET >=> pathScan "/api/%s/%i" handleGet
+          GET
+          >=> path "/healthcheck"
+          >=> Successful.OK "success"
           POST
           >=> pathScan "/api/%s" (handlePost >> request) ]
         |> choose
-        |> startWebServerAsync defaultConfig
+        |> startWebServerAsync config
         |> snd
 
     let rec private getAsyncNotEmpty (url: string) =

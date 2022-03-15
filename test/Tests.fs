@@ -7,4 +7,4 @@ open Swensen.Unquote
 let now = DateTime.Now
 
 [<Fact>]
-let ``test`` () = test <@ 2 * 2 <> 4 @>
+let ``test`` () = test <@ 2 + 2 = 4 @>
