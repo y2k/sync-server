@@ -216,7 +216,7 @@ module RemoteSyncer =
           GET >=> pathScan "/api/%s/%i" handleGet
           GET
           >=> path "/healthcheck"
-          >=> Successful.OK "success2"
+          >=> Successful.OK "success"
           POST
           >=> pathScan "/api/%s" (handlePost >> request) ]
         |> choose
