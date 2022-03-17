@@ -44,21 +44,32 @@ module Preact =
 
 module ElmHooks =
     open Preact
+    open SyncServer
 
-    let useElm (init: 'model) (update: 'msg -> _ -> _) =
+    let useElm (init: 'model) (update: 'model -> 'msg -> Effect.t list) =
         let mutable _dispatch: _ -> unit = fun _ -> ()
 
         let (_model, dispatch) =
             useReducer
                 (fun state msg ->
-                    let (newState, effects) = update msg state
+                    let effects = update state msg
+                    let mutable newState = state
 
-                    async {
-                        for e in effects do
-                            let! m = e
-                            _dispatch m
-                    }
-                    |> Async.StartImmediate
+                    for e in effects do
+                        match e with
+                        | :? UpdateModelEffect<'model> as pe ->
+                            let (UpdateModelEffect ns) = pe
+                            newState <- ns
+                        | :? AddEffect<'msg> as ef ->
+                            let (AddEffect (_, _, _, _, f)) = ef
+
+                            async {
+                                do! Async.Sleep 1_000
+                                let m = f (Ok())
+                                _dispatch m
+                            }
+                            |> Async.StartImmediate
+                        | _ -> ()
 
                     newState)
                 init
@@ -85,60 +96,7 @@ module Preferences =
 
     let decorate (f: Map<string, string> -> _) = f store
 
-module ViewDomain =
-    let addItem (_server: string) (_pass: string) (_title: string) (_url: string) : unit Async = Async.Sleep 1_000
-
-    type Model =
-        { serverHost: string
-          serverPass: string
-          title: string
-          url: string
-          isBusy: bool
-          linkType: int
-          linkTypes: string [] }
-        member this.buttonDisabled = String.IsNullOrEmpty this.url || this.isBusy
-        member this.inputDisabled = this.isBusy
-
-    type Msg =
-        | ServerHostChanged of string
-        | UpdateConfiguration
-        | TitleChanged of string
-        | UrlChanged of string
-        | LinkTypeChanged of int
-        | Add
-        | AddResult of Result<unit, exn>
-
-    let init =
-        { serverHost = ""
-          serverPass = ""
-          url = ""
-          title = ""
-          isBusy = false
-          linkType = 0
-          linkTypes =
-            [| "URL (bookmark)"
-               "Watch late (youtube)" |] }
-
-    let update (prefs: Map<string, string>) (msg: Msg) (model: Model) =
-        match msg with
-        | ServerHostChanged value -> { model with serverHost = value }, []
-        | UpdateConfiguration ->
-            model,
-            [ Preferences.savePreference "server" model.serverHost
-              |> failwith "???" ]
-        | TitleChanged value -> { model with title = value }, []
-        | UrlChanged value -> { model with url = value }, []
-        | LinkTypeChanged value -> { model with linkType = value }, []
-        | Add ->
-            { model with isBusy = true },
-            [ Async.catchWith AddResult (addItem model.serverHost (Map.find "server" prefs) model.title model.url) ]
-        | AddResult _ ->
-            { model with
-                isBusy = false
-                url = ""
-                title = ""
-                linkType = 0 },
-            []
+module ViewDomain = SyncServer.ClientComponent
 
 open Browser.Dom
 open Fable.Core.JsInterop
