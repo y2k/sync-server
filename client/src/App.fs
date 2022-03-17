@@ -45,7 +45,7 @@ module Preact =
 module ElmHooks =
     open Preact
 
-    let useElm (init: 'model) (update: 'msg -> _ -> _) toViewModel =
+    let useElm (init: 'model) (update: 'msg -> _ -> _) =
         let mutable _dispatch: _ -> unit = fun _ -> ()
 
         let (_model, dispatch) =
@@ -64,7 +64,7 @@ module ElmHooks =
                 init
 
         _dispatch <- dispatch
-        let vm = toViewModel _model
+        let vm = _model
         vm, dispatch
 
 module Async =
@@ -96,6 +96,8 @@ module ViewDomain =
           isBusy: bool
           linkType: int
           linkTypes: string [] }
+        member this.buttonDisabled = String.IsNullOrEmpty this.url || this.isBusy
+        member this.inputDisabled = this.isBusy
 
     type Msg =
         | ServerHostChanged of string
@@ -105,15 +107,6 @@ module ViewDomain =
         | LinkTypeChanged of int
         | Add
         | AddResult of Result<unit, exn>
-
-    let viewModel (model: Model) =
-        {| serverHost = model.serverHost
-           url = model.url
-           title = model.title
-           inputDisabled = model.isBusy
-           buttonDisabled = String.IsNullOrEmpty model.url || model.isBusy
-           linkType = model.linkType
-           linkTypes = model.linkTypes |}
 
     let init =
         { serverHost = ""
@@ -153,7 +146,7 @@ open Preact
 
 let HomeComponent (props: _) =
     let (vm, dispatch) =
-        ElmHooks.useElm ViewDomain.init (Preferences.decorate ViewDomain.update) ViewDomain.viewModel
+        ElmHooks.useElm ViewDomain.init (Preferences.decorate ViewDomain.update)
 
     div [ "class" ==> "form" ] [
         input [ "class" ==> "input"
