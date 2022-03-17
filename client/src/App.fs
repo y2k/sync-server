@@ -1,113 +1,210 @@
 module App
 
-module Application =
-    type ItemType =
-        | WatchLate
-        | Url
+open System
 
-    type State =
-        { title: string
+module Preact =
+    open Fable.Core
+    open Fable.Core.JsInterop
+
+    type VNode =
+        interface
+        end
+
+    let inline str (x: string) : VNode = !!x
+
+    [<Import("useReducer", "preact/hooks")>]
+    let useReducer (_: 'state -> 'action -> 'state) (_: 'state) : 'state * ('action -> unit) = jsNative
+
+    [<Import("useState", "preact/hooks")>]
+    let useState (_: 't) : ('t * (('t -> 't) -> unit)) = jsNative
+
+    [<Import("useEffect", "preact/hooks")>]
+    let useEffect (_: Func<unit, unit -> unit>) (_: _ array) : unit = jsNative
+
+    [<Import("h", "preact")>]
+    let h (_: string, _: 'prop, [<ParamArray>] children: VNode seq) : VNode = jsNative
+
+    [<Import("h", "preact")>]
+    let comp (_: _ -> VNode, _: 'prop, [<ParamArray>] children: VNode seq) : VNode = jsNative
+
+    [<Import("render", "preact")>]
+    let render (_: VNode) (node: obj) = jsNative
+
+    let inline button props children = h ("button", createObj props, children)
+    let inline input props children = h ("input", createObj props, children)
+    let inline form props children = h ("form", createObj props, children)
+    let inline div props children = h ("div", createObj props, children)
+    let inline span props children = h ("span", createObj props, children)
+    let inline select props children = h ("select", createObj props, children)
+    let inline option props children = h ("option", createObj props, children)
+    let inline label props children = h ("label", createObj props, children)
+
+    let inline textarea props children =
+        h ("textarea", createObj props, children)
+
+module ElmHooks =
+    open Preact
+
+    let useElm (init: 'model) (update: 'msg -> _ -> _) toViewModel =
+        let mutable _dispatch: _ -> unit = fun _ -> ()
+
+        let (_model, dispatch) =
+            useReducer
+                (fun state msg ->
+                    let (newState, effects) = update msg state
+
+                    async {
+                        for e in effects do
+                            let! m = e
+                            _dispatch m
+                    }
+                    |> Async.StartImmediate
+
+                    newState)
+                init
+
+        _dispatch <- dispatch
+        let vm = toViewModel _model
+        vm, dispatch
+
+module Async =
+    let catchWith f a =
+        async {
+            try
+                let! r = a
+                return f (Ok r)
+            with
+            | e -> return f (Error e)
+        }
+
+module Preferences =
+    let mutable private store: Map<string, string> = Map.empty
+
+    let savePreference (key: string) (value: string) : unit Async =
+        async { store <- Map.add key value store }
+
+    let decorate (f: Map<string, string> -> _) = f store
+
+module ViewDomain =
+    let addItem (_server: string) (_pass: string) (_title: string) (_url: string) : unit Async = Async.Sleep 1_000
+
+    type Model =
+        { serverHost: string
+          serverPass: string
+          title: string
           url: string
-          itemType: ItemType }
+          isBusy: bool
+          linkType: int
+          linkTypes: string [] }
 
     type Msg =
-        | UrlChanged of string
+        | ServerHostChanged of string
+        | UpdateConfiguration
         | TitleChanged of string
-        | ItemTypeChanged of ItemType
+        | UrlChanged of string
+        | LinkTypeChanged of int
         | Add
+        | AddResult of Result<unit, exn>
 
-    let update state msg = state
+    let viewModel (model: Model) =
+        {| serverHost = model.serverHost
+           url = model.url
+           title = model.title
+           inputDisabled = model.isBusy
+           buttonDisabled = String.IsNullOrEmpty model.url || model.isBusy
+           linkType = model.linkType
+           linkTypes = model.linkTypes |}
 
-module Crypto =
-    open Fable.Core
-    open Fable.Core.JS
+    let init =
+        { serverHost = ""
+          serverPass = ""
+          url = ""
+          title = ""
+          isBusy = false
+          linkType = 0
+          linkTypes =
+            [| "URL (bookmark)"
+               "Watch late (youtube)" |] }
 
-    type GenerateKeyParams = { name: string; length: int }
-    type EncryptParams = { name: string; iv: Uint8Array }
-    type CryptoKey = CryptoKey
-
-    type Subtle =
-        abstract member generateKey: GenerateKeyParams -> bool -> string [] -> CryptoKey Promise
-        abstract member importKey: string -> Uint8Array -> string -> bool -> string [] -> CryptoKey Promise
-        abstract member encrypt: EncryptParams -> CryptoKey -> Uint8Array -> ArrayBuffer Promise
-        abstract member digest: string -> Uint8Array -> Uint8Array Promise
-
-    type Crypto = { subtle: Subtle }
-
-    [<Global("crypto")>]
-    let crypto: Crypto = jsNative
+    let update (prefs: Map<string, string>) (msg: Msg) (model: Model) =
+        match msg with
+        | ServerHostChanged value -> { model with serverHost = value }, []
+        | UpdateConfiguration ->
+            model,
+            [ Preferences.savePreference "server" model.serverHost
+              |> failwith "???" ]
+        | TitleChanged value -> { model with title = value }, []
+        | UrlChanged value -> { model with url = value }, []
+        | LinkTypeChanged value -> { model with linkType = value }, []
+        | Add ->
+            { model with isBusy = true },
+            [ Async.catchWith AddResult (addItem model.serverHost (Map.find "server" prefs) model.title model.url) ]
+        | AddResult _ ->
+            { model with
+                isBusy = false
+                url = ""
+                title = ""
+                linkType = 0 },
+            []
 
 open Browser.Dom
-open Fable.Core
-open Fable.Core.JS
-open System.Text
+open Fable.Core.JsInterop
+open Preact
 
-let foo () =
-    async {
-        let bytes =
-            Encoding.UTF8.GetBytes("test")
-            |> Constructors.Uint8Array.Create
+let HomeComponent (props: _) =
+    let (vm, dispatch) =
+        ElmHooks.useElm ViewDomain.init (Preferences.decorate ViewDomain.update) ViewDomain.viewModel
 
-        printfn "key bytes = %A" bytes
-
-        let! rawKey =
-            Crypto.crypto.subtle.digest "SHA-256" bytes
-            |> Async.AwaitPromise
-
-        let rawKey = rawKey.slice (0, 16)
-        printfn "rawKey = %A" (Constructors.Uint8Array.Create rawKey)
-
-        let! key =
-            Crypto.crypto.subtle.importKey "raw" rawKey "AES-CBC" true [| "encrypt"; "decrypt" |]
-            |> Async.AwaitPromise
-
-        let data = Constructors.Uint8Array.Create(16)
-
-        for i in 0..15 do
-            data.[i] <- byte i
-
-        printfn "data = %A" data
-
-        let iv = Constructors.Uint8Array.Create(16)
-
-        let! encrypted =
-            Crypto.crypto.subtle.encrypt { name = "AES-CBC"; iv = iv } key data
-            |> Async.AwaitPromise
-
-        let encrypted = Constructors.Uint8Array.Create(encrypted)
-
-        printfn "encrypted: (%O) %A" (encrypted.length) encrypted
-    }
-    |> Async.StartImmediate
-
-open Fable.React
-open Fable.React.Props
-
-let view =
-    FunctionComponent.Of<unit> (fun props ->
-        form [ Class "form" ] [
-            input [ Class "input"
-                    Placeholder "URL"
-                    Name "url" ]
-            textarea [ Class "textarea"
-                       Placeholder "Title"
-                       Name "title" ] []
-            div [ Class "field" ] [
-                label [ Class "label" ] [
-                    str "Link type"
-                ]
-                div [ Class "control" ] [
-                    div [ Class "select" ] [
-                        select [ Name "type" ] [
-                            option [ Value "watch_late" ] [
-                                str "Watch late (youtube)"
-                            ]
-                            option [ Value "url" ] [ str "URL" ]
-                        ]
-                    ]
+    div [ "class" ==> "form" ] [
+        input [ "class" ==> "input"
+                "placeholder" ==> "URL"
+                "value" ==> vm.url
+                "disabled" ==> vm.inputDisabled
+                "onInput"
+                ==> fun e -> dispatch (ViewDomain.UrlChanged e?target?value) ] []
+        textarea [ "class" ==> "textarea"
+                   "placeholder" ==> "Title"
+                   "value" ==> vm.title
+                   "disabled" ==> vm.inputDisabled
+                   "onInput"
+                   ==> fun e -> dispatch (ViewDomain.TitleChanged e?target?value) ] []
+        div [ "class" ==> "field" ] [
+            label [ "class" ==> "label" ] [
+                str "Link type"
+            ]
+            div [ "class" ==> "control" ] [
+                div [ "class" ==> "select" ] [
+                    select
+                        [ "name" ==> "type"
+                          "value" ==> vm.linkType
+                          "onChange"
+                          ==> fun e -> dispatch (ViewDomain.LinkTypeChanged e?target?value)
+                          "disabled" ==> vm.inputDisabled ]
+                        (Array.mapi (fun i x -> option [ "value" ==> i ] [ str x ]) vm.linkTypes)
                 ]
             ]
-            button [ Class "button" ] [ str "Add" ]
-        ])
+        ]
+        button [ "class" ==> "button"
+                 "disabled" ==> vm.buttonDisabled
+                 "onclick" ==> fun _ -> dispatch ViewDomain.Add ] [
+            str "Add"
+        ]
+        label [ "class" ==> "label" ] [
+            str "Server configuration"
+        ]
+        input [ "class" ==> "input"
+                "placeholder" ==> "Server host"
+                "value" ==> vm.serverHost
+                "onInput"
+                ==> fun e -> dispatch (ViewDomain.ServerHostChanged e?target?value) ] []
+        input [ "class" ==> "input"
+                "placeholder" ==> "Pass-key"
+                "value" ==> vm.url ] []
+        button [ "class" ==> "button"
+                 "onclick"
+                 ==> fun _ -> dispatch ViewDomain.UpdateConfiguration ] [
+            str "Update"
+        ]
+    ]
 
-ReactDom.render (view (), (document.getElementById "root"))
+render (comp (HomeComponent, (), [])) (document.getElementById "root")
