@@ -5,11 +5,12 @@ RUN apk add yarn
 WORKDIR /app
 COPY sync-server.sln .
 COPY nuget.config .
+COPY core/*.fs core/
+COPY core/*.fsproj core/
 COPY src/*.fs src/
 COPY src/*.fsproj src/
 COPY test/*.fs test/
 COPY test/*.fsproj test/
-
 COPY ["client/webpack.config.js", "client/yarn.lock", "client/package.json", "client/"]
 COPY client/public client/public
 COPY client/src/*.fs client/src/
