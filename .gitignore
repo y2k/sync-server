@@ -7,3 +7,4 @@ global.json
 .ionide/
 __data/
 .DS_Store
+*.fs.js
