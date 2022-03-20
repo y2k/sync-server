@@ -46,7 +46,7 @@ module ElmHooks =
     open Preact
     open SyncServer
 
-    let useElm (init: 'model) (update: 'model -> 'msg -> Effect.t list) =
+    let useElm (init: 'model) (update: 'model -> 'msg -> Event list) =
         let mutable _dispatch: _ -> unit = fun _ -> ()
 
         let (_model, dispatch) =
@@ -57,14 +57,14 @@ module ElmHooks =
 
                     for e in effects do
                         match e with
-                        | :? UpdateModelEffect<'model> as pe ->
-                            let (UpdateModelEffect ns) = pe
+                        | :? ModelChanged<'model> as pe ->
+                            let (ModelChanged ns) = pe
                             newState <- ns
-                        | :? AddEffect<'msg> as ef ->
-                            let (AddEffect (_, _, _, _, f)) = ef
+                        | :? NewMessageCreated<'msg> as ef ->
+                            let (NewMessageCreated (host, pass, payload, f)) = ef
 
                             async {
-                                do! Async.Sleep 1_000
+                                do! MessageUploder.upload host pass payload
                                 let m = f (Ok())
                                 _dispatch m
                             }
@@ -150,10 +150,10 @@ let HomeComponent (props: _) =
                 ==> fun e -> dispatch (ViewDomain.ServerHostChanged e?target?value) ] []
         input [ "class" ==> "input"
                 "placeholder" ==> "Pass-key"
-                "value" ==> vm.url ] []
-        button [ "class" ==> "button"
-                 "onclick"
-                 ==> fun _ -> dispatch ViewDomain.UpdateConfiguration ] [
+                "value" ==> vm.serverPass
+                "onInput"
+                ==> fun e -> dispatch (ViewDomain.PasswordChanged e?target?value) ] []
+        button [ "class" ==> "button" ] [
             str "Update"
         ]
     ]

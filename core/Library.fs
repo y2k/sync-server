@@ -1,25 +1,39 @@
 ﻿namespace SyncServer
 
-module Effect =
-    type t =
-        interface
-        end
-
-    let call (_: t) : _ Async = failwith "???"
-
 open System
+
+module Message =
+    type Mode =
+        | Url
+        | Watchlate
+
+    let make (title: string) (url: string) (mode: Mode) =
+        let url = Uri.EscapeDataString url
+        let title = Uri.EscapeDataString title
+
+        let mode =
+            match mode with
+            | Url -> 0
+            | Watchlate -> 1
+
+        $"%s{url}&%s{title}&%i{mode}"
+        |> Text.Encoding.UTF8.GetBytes
+
+type Event =
+    interface
+    end
 
 type PreferencesEffect =
     | PreferencesEffect of string * string
-    interface Effect.t
+    interface Event
 
-type 'model UpdateModelEffect =
-    | UpdateModelEffect of 'model
-    interface Effect.t
+type 'model ModelChanged =
+    | ModelChanged of 'model
+    interface Event
 
-type 't AddEffect =
-    | AddEffect of server: string * pass: string * title: string * url: string * (Result<unit, exn> -> 't)
-    interface Effect.t
+type 't NewMessageCreated =
+    | NewMessageCreated of server: string * pass: string * payload: byte [] * (Result<unit, exn> -> 't)
+    interface Event
 
 module ClientComponent =
     type Model =
@@ -35,7 +49,7 @@ module ClientComponent =
 
     type Msg =
         | ServerHostChanged of string
-        | UpdateConfiguration
+        | PasswordChanged of string
         | TitleChanged of string
         | UrlChanged of string
         | LinkTypeChanged of int
@@ -53,18 +67,25 @@ module ClientComponent =
             [| "URL (bookmark)"
                "Watch late (youtube)" |] }
 
-    let update (prefs: Map<string, string>) (model: Model) (msg: Msg) : Effect.t list =
+    let update (prefs: Map<string, string>) (model: Model) (msg: Msg) : Event list =
         match msg with
-        | ServerHostChanged value -> [ UpdateModelEffect { model with serverHost = value } ]
-        | UpdateConfiguration -> [ PreferencesEffect("server", model.serverHost) ]
-        | TitleChanged value -> [ UpdateModelEffect { model with title = value } ]
-        | UrlChanged value -> [ UpdateModelEffect { model with url = value } ]
-        | LinkTypeChanged value -> [ UpdateModelEffect { model with linkType = value } ]
+        | ServerHostChanged value -> [ ModelChanged { model with serverHost = value } ]
+        | PasswordChanged value -> [ ModelChanged { model with serverPass = value } ]
+        | TitleChanged value -> [ ModelChanged { model with title = value } ]
+        | UrlChanged value -> [ ModelChanged { model with url = value } ]
+        | LinkTypeChanged value -> [ ModelChanged { model with linkType = value } ]
         | Add ->
-            [ UpdateModelEffect { model with isBusy = true }
-              AddEffect(model.serverHost, "FIXME", model.title, model.url, AddResult) ]
+            let mode =
+                match model.linkType with
+                | 0 -> Message.Url
+                | _ -> Message.Watchlate
+
+            let payload = Message.make model.title model.url mode
+
+            [ ModelChanged { model with isBusy = true }
+              NewMessageCreated(model.serverHost, "/api/history", payload, AddResult) ]
         | AddResult _ ->
-            [ UpdateModelEffect
+            [ ModelChanged
                   { model with
                       isBusy = false
                       url = ""
