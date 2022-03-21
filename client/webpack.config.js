@@ -1,4 +1,4 @@
-var path = require("path");
+const path = require("path");
 
 module.exports = {
     mode: "development",
@@ -10,10 +10,9 @@ module.exports = {
     devServer: {
         publicPath: "/",
         contentBase: "./public",
-        port: 8081,
-        proxy: [{
-            path: '/api',
-            target: 'http://localhost:8080'
-        }]
+        port: 8090,
+        proxy: {
+            '/api': 'http://127.0.0.1:8080'
+        }
     }
 }

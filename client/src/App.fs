@@ -45,6 +45,7 @@ module Preact =
 module ElmHooks =
     open Preact
     open SyncServer
+    open Browser.Dom
 
     let useElm (init: 'model) (update: 'model -> 'msg -> Event list) =
         let mutable _dispatch: _ -> unit = fun _ -> ()
@@ -57,6 +58,9 @@ module ElmHooks =
 
                     for e in effects do
                         match e with
+                        | :? NavigationChanged as pe ->
+                            let (NavigationChanged page) = pe
+                            document.location.search <- $"?page={page}"
                         | :? ModelChanged<'model> as pe ->
                             let (ModelChanged ns) = pe
                             newState <- ns
@@ -102,11 +106,21 @@ open Browser.Dom
 open Fable.Core.JsInterop
 open Preact
 
+let ListComponent (props: _) = str "Hello Wolld"
+
 let HomeComponent (props: _) =
     let (vm, dispatch) =
         ElmHooks.useElm ViewDomain.init (Preferences.decorate ViewDomain.update)
 
     div [ "class" ==> "form" ] [
+        button [ "class" ==> "button"
+                 "onclick"
+                 ==> fun _ -> dispatch ViewDomain.ListClicked ] [
+            str "Open list"
+        ]
+        label [ "class" ==> "label" ] [
+            str "Link config"
+        ]
         input [ "class" ==> "input"
                 "placeholder" ==> "URL"
                 "value" ==> vm.url
@@ -150,4 +164,6 @@ let HomeComponent (props: _) =
                 ==> fun e -> dispatch (ViewDomain.PasswordChanged e?target?value) ] []
     ]
 
-render (comp (HomeComponent, (), [])) (document.getElementById "root")
+match document.location.search with
+| "?page=list" -> render (comp (ListComponent, (), [])) (document.getElementById "root")
+| _ -> render (comp (HomeComponent, (), [])) (document.getElementById "root")

@@ -19,7 +19,6 @@ module Crypto =
     [<Global("crypto")>]
     let crypto: Crypto = jsNative
 
-open Browser.Dom
 open Fable.Core
 open Fable.Core.JS
 open System.Text
