@@ -184,6 +184,7 @@ module RemoteSyncer =
     let private queue = Atom.atom Map.empty
 
     let private handlePost (topic: string) (req: HttpRequest) =
+        printfn "LOG: %O, req = %O" topic req
         queue.update (fun xs ->
             let q =
                 match Map.tryFind topic xs with

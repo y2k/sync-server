@@ -83,7 +83,7 @@ module ClientComponent =
             let payload = Message.make model.title model.url mode
 
             [ ModelChanged { model with isBusy = true }
-              NewMessageCreated(model.serverHost, "/api/history", payload, AddResult) ]
+              NewMessageCreated("/api/history", model.serverPass, payload, AddResult) ]
         | AddResult _ ->
             [ ModelChanged
                   { model with

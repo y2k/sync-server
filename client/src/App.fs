@@ -144,18 +144,10 @@ let HomeComponent (props: _) =
             str "Server configuration"
         ]
         input [ "class" ==> "input"
-                "placeholder" ==> "Server host"
-                "value" ==> vm.serverHost
-                "onInput"
-                ==> fun e -> dispatch (ViewDomain.ServerHostChanged e?target?value) ] []
-        input [ "class" ==> "input"
                 "placeholder" ==> "Pass-key"
                 "value" ==> vm.serverPass
                 "onInput"
                 ==> fun e -> dispatch (ViewDomain.PasswordChanged e?target?value) ] []
-        button [ "class" ==> "button" ] [
-            str "Update"
-        ]
     ]
 
 render (comp (HomeComponent, (), [])) (document.getElementById "root")
