@@ -7,6 +7,13 @@ module Message =
         | Url
         | Watchlate
 
+    type t =
+        { title: string
+          url: string
+          mode: Mode }
+
+    let decode _ : t = failwith "???"
+
     let make (title: string) (url: string) (mode: Mode) =
         let url = Uri.EscapeDataString url
         let title = Uri.EscapeDataString title
@@ -23,17 +30,36 @@ type Event =
     interface
     end
 
-module ListComponent =
-    type Model = Model
-    type Msg = Msg
-    let update _ _ = []
-
-type PreferencesEffect =
-    | PreferencesEffect of string * string
+type 't MessagesRequested =
+    | MessagesRequested of (Result<byte [] list, exn> -> 't)
     interface Event
 
 type 'model ModelChanged =
     | ModelChanged of 'model
+    interface Event
+
+module ListComponent =
+    type Item = { url: string; title: string }
+    type Model = { items: Item [] }
+    type Msg = MessagesLoaded of Result<byte [] list, exn>
+
+    let init: Model * Event list =
+        { items = [| { url = "hello"; title = "world" } |] }, [ MessagesRequested MessagesLoaded ]
+
+    let update (model: Model) (msg: Msg) : Event list =
+        match msg with
+        | MessagesLoaded (Ok payloads) ->
+            let items =
+                payloads
+                |> List.map Message.decode
+                |> List.map (fun i -> { url = i.url; title = i.title })
+                |> List.toArray
+
+            [ ModelChanged { model with items = items } ]
+        | MessagesLoaded (Error _) -> []
+
+type PreferencesEffect =
+    | PreferencesEffect of string * string
     interface Event
 
 type 't NewMessageCreated =
@@ -44,7 +70,7 @@ type NavigationChanged =
     | NavigationChanged of string
     interface Event
 
-module ClientComponent =
+module HomeComponent =
     type Model =
         { serverHost: string
           serverPass: string
@@ -70,7 +96,7 @@ module ClientComponent =
         | AddResult of Result<unit, exn>
         | ListClicked
 
-    let init =
+    let init: Model * Event list =
         { serverHost = ""
           serverPass = ""
           url = ""
@@ -79,7 +105,8 @@ module ClientComponent =
           linkType = 0
           linkTypes =
             [| "URL (bookmark)"
-               "Watch late (youtube)" |] }
+               "Watch late (youtube)" |] },
+        []
 
     let update (prefs: Map<string, string>) (model: Model) (msg: Msg) : Event list =
         match msg with

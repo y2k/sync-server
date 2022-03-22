@@ -1,3 +1,9 @@
 .form { display: flex; flex-direction: column; width: 600px; margin: auto; padding-top: 16px }
 
 .form > *:not(:last-child) { margin-bottom: 16px; }
+
+.list {
+    padding: 16px;
+}
+
+.list > *:not(:last-child) { margin-bottom: 16px; }

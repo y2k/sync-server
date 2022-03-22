@@ -47,8 +47,16 @@ module ElmHooks =
     open SyncServer
     open Browser.Dom
 
-    let useElm (init: 'model) (update: 'model -> 'msg -> Event list) =
+    let useElm (init: 'model * Event list) (update: 'model -> 'msg -> Event list) =
         let mutable _dispatch: _ -> unit = fun _ -> ()
+
+        let handleEvents (events: Event list) =
+            for e in events do
+                match e with
+                | :? MessagesRequested<'msg> as pe ->
+                    let (MessagesRequested next) = pe
+                    failwith "???"
+                | _ -> ()
 
         let (_model, dispatch) =
             useReducer
@@ -76,11 +84,13 @@ module ElmHooks =
                         | _ -> ()
 
                     newState)
-                init
+                (fst init)
 
         _dispatch <- dispatch
-        let vm = _model
-        vm, dispatch
+
+        handleEvents (snd init)
+
+        _model, dispatch
 
 module Async =
     let catchWith f a =
@@ -100,22 +110,40 @@ module Preferences =
 
     let decorate (f: Map<string, string> -> _) = f store
 
-module ViewDomain = SyncServer.ClientComponent
-
 open Browser.Dom
 open Fable.Core.JsInterop
 open Preact
+open SyncServer
 
-let ListComponent (props: _) = str "Hello Wolld"
+let ListViewComponent (props: _) =
+    let (model, dispatch) = ElmHooks.useElm ListComponent.init ListComponent.update
 
-let HomeComponent (props: _) =
+    model.items
+    |> Array.map (fun item ->
+        div [ "class" ==> "card" ] [
+            div [ "class" ==> "card-content" ] [
+                div [ "class" ==> "media" ] [
+                    div [ "class" ==> "media-content" ] [
+                        div [ "class" ==> "title is-4" ] [
+                            str item.url
+                        ]
+                        div [ "class" ==> "subtitle is-6" ] [
+                            str item.title
+                        ]
+                    ]
+                ]
+            ]
+        ])
+    |> div [ "class" ==> "list" ]
+
+let HomeViewComponent (props: _) =
     let (vm, dispatch) =
-        ElmHooks.useElm ViewDomain.init (Preferences.decorate ViewDomain.update)
+        ElmHooks.useElm HomeComponent.init (Preferences.decorate HomeComponent.update)
 
     div [ "class" ==> "form" ] [
         button [ "class" ==> "button"
                  "onclick"
-                 ==> fun _ -> dispatch ViewDomain.ListClicked ] [
+                 ==> fun _ -> dispatch HomeComponent.ListClicked ] [
             str "Open list"
         ]
         label [ "class" ==> "label" ] [
@@ -126,13 +154,13 @@ let HomeComponent (props: _) =
                 "value" ==> vm.url
                 "disabled" ==> vm.inputDisabled
                 "onInput"
-                ==> fun e -> dispatch (ViewDomain.UrlChanged e?target?value) ] []
+                ==> fun e -> dispatch (HomeComponent.UrlChanged e?target?value) ] []
         textarea [ "class" ==> "textarea"
                    "placeholder" ==> "Title"
                    "value" ==> vm.title
                    "disabled" ==> vm.inputDisabled
                    "onInput"
-                   ==> fun e -> dispatch (ViewDomain.TitleChanged e?target?value) ] []
+                   ==> fun e -> dispatch (HomeComponent.TitleChanged e?target?value) ] []
         div [ "class" ==> "field" ] [
             label [ "class" ==> "label" ] [
                 str "Link type"
@@ -143,7 +171,7 @@ let HomeComponent (props: _) =
                         [ "name" ==> "type"
                           "value" ==> vm.linkType
                           "onChange"
-                          ==> fun e -> dispatch (ViewDomain.LinkTypeChanged e?target?value)
+                          ==> fun e -> dispatch (HomeComponent.LinkTypeChanged e?target?value)
                           "disabled" ==> vm.inputDisabled ]
                         (Array.mapi (fun i x -> option [ "value" ==> i ] [ str x ]) vm.linkTypes)
                 ]
@@ -151,7 +179,7 @@ let HomeComponent (props: _) =
         ]
         button [ "class" ==> "button"
                  "disabled" ==> vm.buttonDisabled
-                 "onclick" ==> fun _ -> dispatch ViewDomain.Add ] [
+                 "onclick" ==> fun _ -> dispatch HomeComponent.Add ] [
             str "Add"
         ]
         label [ "class" ==> "label" ] [
@@ -161,9 +189,9 @@ let HomeComponent (props: _) =
                 "placeholder" ==> "Pass-key"
                 "value" ==> vm.serverPass
                 "onInput"
-                ==> fun e -> dispatch (ViewDomain.PasswordChanged e?target?value) ] []
+                ==> fun e -> dispatch (HomeComponent.PasswordChanged e?target?value) ] []
     ]
 
 match document.location.search with
-| "?page=list" -> render (comp (ListComponent, (), [])) (document.getElementById "root")
-| _ -> render (comp (HomeComponent, (), [])) (document.getElementById "root")
+| "?page=list" -> render (comp (ListViewComponent, (), [])) (document.getElementById "root")
+| _ -> render (comp (HomeViewComponent, (), [])) (document.getElementById "root")
