@@ -12,7 +12,13 @@ module Message =
           url: string
           mode: Mode }
 
-    let decode _ : t = failwith "???"
+    let decode (data: byte []) : t =
+        let s = Text.Encoding.UTF8.GetString data
+        let parts = s.Split('&')
+
+        { url = Uri.UnescapeDataString parts.[0]
+          title = Uri.UnescapeDataString parts.[1]
+          mode = Url }
 
     let make (title: string) (url: string) (mode: Mode) =
         let url = Uri.EscapeDataString url
@@ -31,23 +37,34 @@ type Event =
     end
 
 type 't MessagesRequested =
-    | MessagesRequested of (Result<byte [] list, exn> -> 't)
+    | MessagesRequested of server: string * pass: string * (Result<byte [] list, exn> -> 't)
     interface Event
 
 type 'model ModelChanged =
     | ModelChanged of 'model
     interface Event
 
+type NavigationChanged =
+    | NavigationChanged of string
+    interface Event
+
 module ListComponent =
     type Item = { url: string; title: string }
-    type Model = { items: Item [] }
-    type Msg = MessagesLoaded of Result<byte [] list, exn>
+    type Model = { pass: string; items: Item [] }
 
-    let init: Model * Event list =
-        { items = [| { url = "hello"; title = "world" } |] }, [ MessagesRequested MessagesLoaded ]
+    type Msg =
+        | HomeClicked
+        | PasswordChanged of string
+        | LoadMessagesClicked
+        | MessagesLoaded of Result<byte [] list, exn>
+
+    let init: Model * Event list = { pass = ""; items = [||] }, []
 
     let update (model: Model) (msg: Msg) : Event list =
         match msg with
+        | HomeClicked -> [ NavigationChanged "home" ]
+        | PasswordChanged value -> [ ModelChanged { model with pass = value } ] // FIXME:
+        | LoadMessagesClicked -> [ MessagesRequested("/api/history/0", model.pass, MessagesLoaded) ]
         | MessagesLoaded (Ok payloads) ->
             let items =
                 payloads
@@ -64,10 +81,6 @@ type PreferencesEffect =
 
 type 't NewMessageCreated =
     | NewMessageCreated of server: string * pass: string * payload: byte [] * (Result<unit, exn> -> 't)
-    interface Event
-
-type NavigationChanged =
-    | NavigationChanged of string
     interface Event
 
 module HomeComponent =

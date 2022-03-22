@@ -54,8 +54,14 @@ module ElmHooks =
             for e in events do
                 match e with
                 | :? MessagesRequested<'msg> as pe ->
-                    let (MessagesRequested next) = pe
-                    failwith "???"
+                    let (MessagesRequested (server, pass, next)) = pe
+
+                    async {
+                        let! response = MessageUploder.loadAllPayloads server pass
+                        let m = next (Ok response)
+                        _dispatch m
+                    }
+                    |> Async.StartImmediate
                 | _ -> ()
 
         let (_model, dispatch) =
@@ -66,6 +72,15 @@ module ElmHooks =
 
                     for e in effects do
                         match e with
+                        | :? MessagesRequested<'msg> as pe ->
+                            let (MessagesRequested (server, pass, next)) = pe
+
+                            async {
+                                let! response = MessageUploder.loadAllPayloads server pass
+                                let m = next (Ok response)
+                                _dispatch m
+                            }
+                            |> Async.StartImmediate
                         | :? NavigationChanged as pe ->
                             let (NavigationChanged page) = pe
                             document.location.search <- $"?page={page}"
@@ -118,23 +133,46 @@ open SyncServer
 let ListViewComponent (props: _) =
     let (model, dispatch) = ElmHooks.useElm ListComponent.init ListComponent.update
 
-    model.items
-    |> Array.map (fun item ->
-        div [ "class" ==> "card" ] [
-            div [ "class" ==> "card-content" ] [
-                div [ "class" ==> "media" ] [
-                    div [ "class" ==> "media-content" ] [
-                        div [ "class" ==> "title is-4" ] [
-                            str item.url
-                        ]
-                        div [ "class" ==> "subtitle is-6" ] [
-                            str item.title
+    let listView =
+        model.items
+        |> Array.map (fun item ->
+            div [ "class" ==> "card" ] [
+                div [ "class" ==> "card-content" ] [
+                    div [ "class" ==> "media" ] [
+                        div [ "class" ==> "media-content" ] [
+                            div [ "class" ==> "title is-4" ] [
+                                str item.url
+                            ]
+                            div [ "class" ==> "subtitle is-6" ] [
+                                str item.title
+                            ]
                         ]
                     ]
                 ]
-            ]
-        ])
-    |> div [ "class" ==> "list" ]
+            ])
+        |> div []
+
+    div [ "class" ==> "form" ] [
+        button [ "class" ==> "button"
+                 "onclick"
+                 ==> fun _ -> dispatch ListComponent.HomeClicked ] [
+            str "Open home"
+        ]
+        label [ "class" ==> "label" ] [
+            str "Messages"
+        ]
+        input [ "class" ==> "input"
+                "placeholder" ==> "Password"
+                "value" ==> model.pass
+                "onInput"
+                ==> fun e -> dispatch (ListComponent.PasswordChanged e?target?value) ] []
+        button [ "class" ==> "button"
+                 "onclick"
+                 ==> fun _ -> dispatch ListComponent.LoadMessagesClicked ] [
+            str "Load items"
+        ]
+        listView
+    ]
 
 let HomeViewComponent (props: _) =
     let (vm, dispatch) =
