@@ -211,9 +211,9 @@ module RemoteSyncer =
         let config =
             { defaultConfig with bindings = [ HttpBinding.create HTTP (IPAddress.Parse "0.0.0.0") 8080us ] }
 
-        [ GET >=> path "/" >=> Files.file "../client/public/index.html"
-          GET >=> path "/index.css" >=> Files.file "../client/public/index.css"
-          GET >=> path "/bundle.js" >=> Files.file "../client/public/bundle.js"
+        [ GET >=> path "/" >=> Files.file "../web/public/index.html"
+          GET >=> path "/index.css" >=> Files.file "../web/public/index.css"
+          GET >=> path "/bundle.js" >=> Files.file "../web/public/bundle.js"
           GET >=> pathScan "/api/%s/%i" handleGet
           GET
           >=> path "/healthcheck"

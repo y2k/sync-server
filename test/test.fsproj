@@ -24,7 +24,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\src\app.fsproj" />
+      <ProjectReference Include="..\app\app.fsproj" />
     </ItemGroup>
 
 </Project>

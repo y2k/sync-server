@@ -3,6 +3,7 @@
     <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Framework.fs" />
     <Compile Include="MessageUploder.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>
