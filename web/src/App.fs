@@ -59,7 +59,7 @@ let ListViewComponent (props: _) =
                     ]
                 ]
             ])
-        |> div []
+        |> div [ "class" ==> "list" ]
 
     div [ "class" ==> "form" ] [
         button [ "class" ==> "button"

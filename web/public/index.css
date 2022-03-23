@@ -2,8 +2,4 @@
 
 .form > *:not(:last-child) { margin-bottom: 16px; }
 
-.list {
-    padding: 16px;
-}
-
 .list > *:not(:last-child) { margin-bottom: 16px; }

@@ -175,6 +175,7 @@ module AdminServer =
         |> snd
 
 module RemoteSyncer =
+    open System.IO
     open System.Net
     open System.Net.Http
     open Suave
@@ -188,8 +189,19 @@ module RemoteSyncer =
 
     let private handleGet getNextById ((topic: string), (id: int64)) =
         match getNextById id with
-        | Some (data: byte [], _id: int64) -> Successful.ok data
-        | None -> Successful.NO_CONTENT
+        | [] -> Successful.NO_CONTENT
+        | items ->
+            let buffer =
+                items
+                |> List.fold
+                    (fun (buf: MemoryStream) (data: byte [], id: int64) ->
+                        buf.Write(BitConverter.GetBytes(data.Length), 0, 4)
+                        buf.Write(data, 0, data.Length)
+                        buf)
+                    (new MemoryStream())
+
+            Successful.ok (buffer.ToArray())
+            >=> Writers.setHeader "X-ID" (items |> List.last |> snd |> string)
 
     let private logRoute next =
         request (fun r ->
@@ -460,12 +472,13 @@ module EventStorage =
 
         { conn = conn }
 
-    let getNextById (t: t) (id: int64) : (byte [] * int64) option =
+    let getNextById (t: t) (id: int64) : (byte [] * int64) list =
         t.conn.Query<NewItemRead>(
-            "SELECT rowid AS id, data FROM main WHERE rowid > @id ORDER BY rowid LIMIT 1",
+            "SELECT rowid AS id, data FROM main WHERE rowid > @id ORDER BY rowid LIMIT 50",
             {| id = id |}
         )
-        |> Seq.fold (fun _ x -> Some(x.data, x.id)) None
+        |> Seq.map (fun x -> x.data, x.id)
+        |> Seq.toList
 
     let insert t (data: byte []) =
         use tran = t.conn.BeginTransaction()
@@ -507,7 +520,7 @@ let main args =
                          Dispatcher.listenUpdates (LogEventHandler.handle "download") ]
         |> Async.Ignore
     | [| "s" |] ->
-        let db = EventStorage.make "message.db"
+        let db = EventStorage.make "__data/message.db"
         RemoteSyncer.startServer (EventStorage.insert db) (EventStorage.getNextById db)
     | _ -> async.Zero()
     |> Async.RunSynchronously

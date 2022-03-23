@@ -83,11 +83,22 @@ let loadAllPayloads (server: string) (pass: string) : byte [] list Async =
             |> Async.AwaitPromise
 
         let! buf = response.arrayBuffer () |> Async.AwaitPromise
-        let! result = decrypt pass buf
 
-        let result = result :> obj :?> byte []
+        let dv = Constructors.DataView.Create buf
+        let mutable pos = 0
+        let mutable result = []
 
-        return [ result ]
+        while pos < buf.byteLength do
+            let size = dv.getInt32 (pos, true)
+            printfn "size = %O, pos = %O, len = %O" size pos buf.byteLength
+            pos <- pos + 4
+            let! d = decrypt pass (buf.slice (pos, pos + size))
+            pos <- pos + size
+            result <- (d :> obj :?> byte []) :: result
+
+        printfn "LOG :: len = %O" (result.Length)
+
+        return result |> List.rev
     }
 
 let upload (server: string) (pass: string) (data: byte []) : unit Async =
