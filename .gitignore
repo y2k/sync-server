@@ -8,3 +8,4 @@ global.json
 __data/
 .DS_Store
 *.fs.js
+*.db

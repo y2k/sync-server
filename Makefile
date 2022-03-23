@@ -6,4 +6,7 @@ start_web:
 start_back:
 	cd app && dotnet watch run s
 
-.PHONY: start start_web start_back
+build:
+	dotnet build
+
+.PHONY: start start_web start_back build

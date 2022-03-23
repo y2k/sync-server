@@ -38,14 +38,6 @@ let handleEvent (state: 'model) dispatch (e: Event) =
 
     newState
 
-module Preferences =
-    let mutable private store: Map<string, string> = Map.empty
-
-    let savePreference (key: string) (value: string) : unit Async =
-        async { store <- Map.add key value store }
-
-    let decorate (f: Map<string, string> -> _) = f store
-
 let ListViewComponent (props: _) =
     let (model, dispatch) =
         ElmHooks.useElm handleEvent ListComponent.init ListComponent.update

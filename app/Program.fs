@@ -181,25 +181,15 @@ module RemoteSyncer =
     open Suave.Filters
     open Suave.Operators
 
-    let private queue = Atom.atom Map.empty
-
-    let private handlePost (topic: string) (req: HttpRequest) =
+    let private handlePost insertBlob (topic: string) (req: HttpRequest) =
         printfn "LOG: %O, req = %O" topic req
-        queue.update (fun xs ->
-            let q =
-                match Map.tryFind topic xs with
-                | Some q -> q
-                | None -> []
-
-            Map.add topic (q @ [ req.rawForm ]) xs)
-
+        insertBlob req.rawForm
         Successful.NO_CONTENT
 
-    let private handleGet ((topic: string), (_: int64)) =
-        queue.dispatch (fun xs ->
-            match Map.tryFind topic xs with
-            | Some (data :: q) -> Map.add topic q xs, Successful.ok data
-            | _ -> xs, Successful.NO_CONTENT)
+    let private handleGet getNextById ((topic: string), (id: int64)) =
+        match getNextById id with
+        | Some (data: byte [], _id: int64) -> Successful.ok data
+        | None -> Successful.NO_CONTENT
 
     let private logRoute next =
         request (fun r ->
@@ -207,19 +197,26 @@ module RemoteSyncer =
             succeed)
         >=> next
 
-    let startServer =
+    let startServer insertBlob getNextById =
         let config =
             { defaultConfig with bindings = [ HttpBinding.create HTTP (IPAddress.Parse "0.0.0.0") 8080us ] }
 
-        [ GET >=> path "/" >=> Files.file "../web/public/index.html"
-          GET >=> path "/index.css" >=> Files.file "../web/public/index.css"
-          GET >=> path "/bundle.js" >=> Files.file "../web/public/bundle.js"
-          GET >=> pathScan "/api/%s/%i" handleGet
+        [ GET
+          >=> path "/"
+          >=> Files.file "../web/public/index.html"
+          GET
+          >=> path "/index.css"
+          >=> Files.file "../web/public/index.css"
+          GET
+          >=> path "/bundle.js"
+          >=> Files.file "../web/public/bundle.js"
+          GET
+          >=> pathScan "/api/%s/%i" (handleGet getNextById)
           GET
           >=> path "/healthcheck"
           >=> Successful.OK "success"
           POST
-          >=> pathScan "/api/%s" (handlePost >> request) ]
+          >=> pathScan "/api/%s" (handlePost insertBlob >> request) ]
         |> choose
         |> startWebServerAsync config
         |> snd
@@ -439,6 +436,45 @@ module FileDispatcher =
     let saveFileHandler (e: Downloader.PersistentBlobCreated) =
         IO.File.WriteAllBytes(e.path, e.content.data |> Option.get)
 
+module EventStorage =
+    open Microsoft.Data.Sqlite
+    open Dapper
+
+    [<CLIMutable>]
+    type NewItem = { data: byte [] }
+
+    [<CLIMutable>]
+    type NewItemRead = { id: int64; data: byte [] }
+
+    type t = private { conn: SqliteConnection }
+
+    let make dbpath =
+        let conn = new SqliteConnection $"DataSource=%s{dbpath}"
+        conn.Open()
+
+        conn.Execute
+            """CREATE TABLE IF NOT EXISTS main (
+            data BLOB
+          )"""
+        |> ignore
+
+        { conn = conn }
+
+    let getNextById (t: t) (id: int64) : (byte [] * int64) option =
+        t.conn.Query<NewItemRead>(
+            "SELECT rowid AS id, data FROM main WHERE rowid > @id ORDER BY rowid LIMIT 1",
+            {| id = id |}
+        )
+        |> Seq.fold (fun _ x -> Some(x.data, x.id)) None
+
+    let insert t (data: byte []) =
+        use tran = t.conn.BeginTransaction()
+
+        t.conn.Execute("INSERT INTO main (data) VALUES (@data)", { data = data })
+        |> ignore
+
+        tran.Commit()
+
 [<EntryPoint>]
 let main args =
     let pass = "7e1195e0bbd0"
@@ -470,7 +506,9 @@ let main args =
                          SyncLogic.getEventsFromServer "localhost:8080" pass
                          Dispatcher.listenUpdates (LogEventHandler.handle "download") ]
         |> Async.Ignore
-    | [| "s" |] -> RemoteSyncer.startServer
+    | [| "s" |] ->
+        let db = EventStorage.make "message.db"
+        RemoteSyncer.startServer (EventStorage.insert db) (EventStorage.getNextById db)
     | _ -> async.Zero()
     |> Async.RunSynchronously
     |> ignore
