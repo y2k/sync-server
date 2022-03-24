@@ -133,7 +133,7 @@ let HomeViewComponent (props: _) =
             str "Server configuration"
         ]
         input [ "class" ==> "input"
-                "placeholder" ==> "Pass-key"
+                "placeholder" ==> "Password"
                 "value" ==> vm.serverPass
                 "onInput"
                 ==> fun e -> dispatch (HomeComponent.PasswordChanged e?target?value) ] []
