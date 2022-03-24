@@ -144,5 +144,4 @@ module HomeComponent =
                   { model with
                       isBusy = false
                       url = ""
-                      title = ""
-                      linkType = 0 } ]
+                      title = "" } ]
