@@ -215,7 +215,13 @@ module RemoteSyncer =
 
         [ GET
           >=> path "/"
-          >=> Files.file "../web/public/index.html"
+        //   >=> Files.file "../web/public/index.html"
+          >=> request (fun _ ->
+              let path = "../web/public/index.html"
+              let html = IO.File.ReadAllText path
+
+              html.Replace("BUNDLE_HASHCODE", File.GetCreationTimeUtc(path).Ticks.ToString())
+              |> Successful.OK)
           GET
           >=> path "/index.css"
           >=> Files.file "../web/public/index.css"
