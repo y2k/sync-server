@@ -2,6 +2,10 @@
 
 open System
 
+module Password =
+    let expand pass =
+        sprintf "0c5d760951d4%s3113da07dc06" pass
+
 module Message =
     type Mode =
         | Url
@@ -64,7 +68,7 @@ module ListComponent =
         match msg with
         | HomeClicked -> [ NavigationChanged "home" ]
         | PasswordChanged value -> [ ModelChanged { model with pass = value } ] // FIXME:
-        | LoadMessagesClicked -> [ MessagesRequested("/api/history/0", model.pass, MessagesLoaded) ]
+        | LoadMessagesClicked -> [ MessagesRequested("/api/history/0", Password.expand model.pass, MessagesLoaded) ]
         | MessagesLoaded (Ok payloads) ->
             let items =
                 payloads
@@ -138,7 +142,7 @@ module HomeComponent =
             let payload = Message.make model.title model.url mode
 
             [ ModelChanged { model with isBusy = true }
-              NewMessageCreated("/api/history", model.serverPass, payload, AddResult) ]
+              NewMessageCreated("/api/history", Password.expand model.serverPass, payload, AddResult) ]
         | AddResult _ ->
             [ ModelChanged
                   { model with
