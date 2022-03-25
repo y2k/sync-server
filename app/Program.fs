@@ -184,11 +184,11 @@ module RemoteSyncer =
 
     let private handlePost insertBlob (topic: string) (req: HttpRequest) =
         printfn "LOG: %O, req = %O" topic req
-        insertBlob req.rawForm
+        insertBlob topic req.rawForm
         Successful.NO_CONTENT
 
-    let private handleGet getNextById ((topic: string), (id: int64)) =
-        match getNextById id with
+    let private handleGet getNextById (topic: string, id: int64) =
+        match getNextById topic id with
         | [] -> Successful.NO_CONTENT
         | items ->
             let buffer =
@@ -215,7 +215,6 @@ module RemoteSyncer =
 
         [ GET
           >=> path "/"
-        //   >=> Files.file "../web/public/index.html"
           >=> request (fun _ ->
               let path = "../web/public/index.html"
               let html = IO.File.ReadAllText path
@@ -459,9 +458,6 @@ module EventStorage =
     open Dapper
 
     [<CLIMutable>]
-    type NewItem = { data: byte [] }
-
-    [<CLIMutable>]
     type NewItemRead = { id: int64; data: byte [] }
 
     type t = private { conn: SqliteConnection }
@@ -478,18 +474,18 @@ module EventStorage =
 
         { conn = conn }
 
-    let getNextById (t: t) (id: int64) : (byte [] * int64) list =
+    let getNextById (t: t) (topic: string) (id: int64) : (byte [] * int64) list =
         t.conn.Query<NewItemRead>(
-            "SELECT rowid AS id, data FROM main WHERE rowid > @id ORDER BY rowid LIMIT 50",
-            {| id = id |}
+            "SELECT rowid AS id, data FROM main WHERE topic = @topic AND rowid > @id ORDER BY rowid LIMIT 50",
+            {| id = id; topic = topic |}
         )
         |> Seq.map (fun x -> x.data, x.id)
         |> Seq.toList
 
-    let insert t (data: byte []) =
+    let insert t (topic: string) (data: byte []) =
         use tran = t.conn.BeginTransaction()
 
-        t.conn.Execute("INSERT INTO main (data) VALUES (@data)", { data = data })
+        t.conn.Execute("INSERT INTO main (topic, data) VALUES (@topic, @data)", {| topic = topic; data = data |})
         |> ignore
 
         tran.Commit()

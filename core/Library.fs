@@ -54,20 +54,30 @@ type NavigationChanged =
 
 module ListComponent =
     type Item = { url: string; title: string }
-    type Model = { pass: string; items: Item [] }
+
+    type Model =
+        { username: string
+          pass: string
+          items: Item [] }
 
     type Msg =
         | HomeClicked
         | PasswordChanged of string
         | LoadMessagesClicked
         | MessagesLoaded of Result<byte [] list, exn>
+        | UsernameChanged of string
 
-    let init: Model * Event list = { pass = ""; items = [||] }, []
+    let init: Model * Event list =
+        { username = ""
+          pass = ""
+          items = [||] },
+        []
 
     let update (model: Model) (msg: Msg) : Event list =
         match msg with
         | HomeClicked -> [ NavigationChanged "home" ]
-        | PasswordChanged value -> [ ModelChanged { model with pass = value } ] // FIXME:
+        | UsernameChanged value -> [ ModelChanged { model with username = value } ]
+        | PasswordChanged value -> [ ModelChanged { model with pass = value } ]
         | LoadMessagesClicked -> [ MessagesRequested("/api/history/0", Password.expand model.pass, MessagesLoaded) ]
         | MessagesLoaded (Ok payloads) ->
             let items =
@@ -91,6 +101,7 @@ module HomeComponent =
     type Model =
         { serverHost: string
           serverPass: string
+          username: string
           title: string
           url: string
           isBusy: bool
@@ -100,6 +111,7 @@ module HomeComponent =
             String.IsNullOrEmpty this.url
             || this.isBusy
             || String.IsNullOrEmpty this.serverPass
+            || String.IsNullOrEmpty this.username
 
         member this.inputDisabled = this.isBusy
 
@@ -109,6 +121,7 @@ module HomeComponent =
         | TitleChanged of string
         | UrlChanged of string
         | LinkTypeChanged of int
+        | UsernameChanged of string
         | Add
         | AddResult of Result<unit, exn>
         | ListClicked
@@ -116,6 +129,7 @@ module HomeComponent =
     let init: Model * Event list =
         { serverHost = ""
           serverPass = ""
+          username = ""
           url = ""
           title = ""
           isBusy = false
@@ -128,6 +142,7 @@ module HomeComponent =
     let update (prefs: Map<string, string>) (model: Model) (msg: Msg) : Event list =
         match msg with
         | ListClicked -> [ NavigationChanged "list" ]
+        | UsernameChanged value -> [ ModelChanged { model with username = value } ]
         | ServerHostChanged value -> [ ModelChanged { model with serverHost = value } ]
         | PasswordChanged value -> [ ModelChanged { model with serverPass = value } ]
         | TitleChanged value -> [ ModelChanged { model with title = value } ]

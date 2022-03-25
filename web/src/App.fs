@@ -71,6 +71,11 @@ let ListViewComponent (props: _) =
             str "Messages"
         ]
         input [ "class" ==> "input"
+                "placeholder" ==> "Username"
+                "value" ==> model.username
+                "onInput"
+                ==> fun e -> dispatch (ListComponent.UsernameChanged e?target?value) ] []
+        input [ "class" ==> "input"
                 "placeholder" ==> "Password"
                 "value" ==> model.pass
                 "onInput"
@@ -132,6 +137,11 @@ let HomeViewComponent (props: _) =
         label [ "class" ==> "label" ] [
             str "Server configuration"
         ]
+        input [ "class" ==> "input"
+                "placeholder" ==> "Username"
+                "value" ==> vm.username
+                "onInput"
+                ==> fun e -> dispatch (HomeComponent.UsernameChanged e?target?value) ] []
         input [ "class" ==> "input"
                 "placeholder" ==> "Password"
                 "value" ==> vm.serverPass
