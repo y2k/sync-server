@@ -5,7 +5,7 @@
   <ItemGroup>
     <Compile Include="Framework.fs" />
     <Compile Include="MessageUploder.fs" />
-    <Compile Include="App.fs" />
+    <Compile Include="WebApp.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Fable.Browser.Dom" Version="2.2.0" />

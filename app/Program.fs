@@ -182,12 +182,16 @@ module RemoteSyncer =
     open Suave.Filters
     open Suave.Operators
 
-    let private handlePost insertBlob (topic: string) (req: HttpRequest) =
-        printfn "LOG: %O, req = %O" topic req
+    let private handlePost insertBlob (req: HttpRequest) =
+        printfn "LOG: headers: %A" req.headers
+        let topic = req.headers |> Map.ofSeq |> Map.find "x-session"
         insertBlob topic req.rawForm
         Successful.NO_CONTENT
 
-    let private handleGet getNextById (topic: string, id: int64) =
+    let private handleGet getNextById (req: HttpRequest) =
+        let topic = req.headers |> Map.ofSeq |> Map.find "x-session"
+        let id: int64 = 0
+
         match getNextById topic id with
         | [] -> Successful.NO_CONTENT
         | items ->
@@ -214,6 +218,9 @@ module RemoteSyncer =
             { defaultConfig with bindings = [ HttpBinding.create HTTP (IPAddress.Parse "0.0.0.0") 8080us ] }
 
         [ GET
+          >=> path "/healthcheck"
+          >=> Successful.OK "success"
+          GET
           >=> path "/"
           >=> request (fun _ ->
               let path = "../web/public/index.html"
@@ -227,13 +234,12 @@ module RemoteSyncer =
           GET
           >=> path "/bundle.js"
           >=> Files.file "../web/public/bundle.js"
-          GET
-          >=> pathScan "/api/%s/%i" (handleGet getNextById)
-          GET
-          >=> path "/healthcheck"
-          >=> Successful.OK "success"
           POST
-          >=> pathScan "/api/%s" (handlePost insertBlob >> request) ]
+          >=> path "/api/history-get"
+          >=> request (handleGet getNextById)
+          POST
+          >=> path "/api/history-add"
+          >=> request (handlePost insertBlob) ]
         |> choose
         |> startWebServerAsync config
         |> snd
@@ -468,6 +474,7 @@ module EventStorage =
 
         conn.Execute
             """CREATE TABLE IF NOT EXISTS main (
+            topic TEXT,
             data BLOB
           )"""
         |> ignore

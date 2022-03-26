@@ -11,10 +11,10 @@ let handleEvent (state: 'model) dispatch (e: Event) =
 
     match e with
     | :? MessagesRequested<'msg> as pe ->
-        let (MessagesRequested (server, pass, next)) = pe
+        let (MessagesRequested (username, server, pass, next)) = pe
 
         async {
-            let! response = MessageUploder.loadAllPayloads server pass
+            let! response = MessageUploder.loadAllPayloads username server pass
             let m = next (Ok response)
             dispatch m
         }
@@ -26,10 +26,10 @@ let handleEvent (state: 'model) dispatch (e: Event) =
         let (ModelChanged ns) = pe
         newState <- ns
     | :? NewMessageCreated<'msg> as ef ->
-        let (NewMessageCreated (host, pass, payload, f)) = ef
+        let (NewMessageCreated (username, host, pass, payload, f)) = ef
 
         async {
-            do! MessageUploder.upload host pass payload
+            do! MessageUploder.upload username host pass payload
             let m = f (Ok())
             dispatch m
         }
@@ -81,6 +81,7 @@ let ListViewComponent (props: _) =
                 "onInput"
                 ==> fun e -> dispatch (ListComponent.PasswordChanged e?target?value) ] []
         button [ "class" ==> "button"
+                 "disabled" ==> model.buttonDisabled
                  "onclick"
                  ==> fun _ -> dispatch ListComponent.LoadMessagesClicked ] [
             str "Load items"
@@ -89,7 +90,7 @@ let ListViewComponent (props: _) =
     ]
 
 let HomeViewComponent (props: _) =
-    let (vm, dispatch) =
+    let (model, dispatch) =
         ElmHooks.useElm handleEvent HomeComponent.init (Preferences.decorate HomeComponent.update)
 
     div [ "class" ==> "form" ] [
@@ -103,14 +104,14 @@ let HomeViewComponent (props: _) =
         ]
         input [ "class" ==> "input"
                 "placeholder" ==> "URL"
-                "value" ==> vm.url
-                "disabled" ==> vm.inputDisabled
+                "value" ==> model.url
+                "disabled" ==> model.inputDisabled
                 "onInput"
                 ==> fun e -> dispatch (HomeComponent.UrlChanged e?target?value) ] []
         textarea [ "class" ==> "textarea"
                    "placeholder" ==> "Title"
-                   "value" ==> vm.title
-                   "disabled" ==> vm.inputDisabled
+                   "value" ==> model.title
+                   "disabled" ==> model.inputDisabled
                    "onInput"
                    ==> fun e -> dispatch (HomeComponent.TitleChanged e?target?value) ] []
         div [ "class" ==> "field" ] [
@@ -121,16 +122,16 @@ let HomeViewComponent (props: _) =
                 div [ "class" ==> "select" ] [
                     select
                         [ "name" ==> "type"
-                          "value" ==> vm.linkType
+                          "value" ==> model.linkType
                           "onChange"
                           ==> fun e -> dispatch (HomeComponent.LinkTypeChanged e?target?value)
-                          "disabled" ==> vm.inputDisabled ]
-                        (Array.mapi (fun i x -> option [ "value" ==> i ] [ str x ]) vm.linkTypes)
+                          "disabled" ==> model.inputDisabled ]
+                        (Array.mapi (fun i x -> option [ "value" ==> i ] [ str x ]) model.linkTypes)
                 ]
             ]
         ]
         button [ "class" ==> "button"
-                 "disabled" ==> vm.buttonDisabled
+                 "disabled" ==> model.buttonDisabled
                  "onclick" ==> fun _ -> dispatch HomeComponent.Add ] [
             str "Add"
         ]
@@ -139,12 +140,12 @@ let HomeViewComponent (props: _) =
         ]
         input [ "class" ==> "input"
                 "placeholder" ==> "Username"
-                "value" ==> vm.username
+                "value" ==> model.username
                 "onInput"
                 ==> fun e -> dispatch (HomeComponent.UsernameChanged e?target?value) ] []
         input [ "class" ==> "input"
                 "placeholder" ==> "Password"
-                "value" ==> vm.serverPass
+                "value" ==> model.serverPass
                 "onInput"
                 ==> fun e -> dispatch (HomeComponent.PasswordChanged e?target?value) ] []
     ]

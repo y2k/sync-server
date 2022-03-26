@@ -76,10 +76,16 @@ let private decrypt (key: string) (data: ArrayBuffer) =
 
 open Fetch
 
-let loadAllPayloads (server: string) (pass: string) : byte [] list Async =
+let loadAllPayloads (username: string) (server: string) (pass: string) : byte [] list Async =
     async {
+        let! channelBytes = username |> Encoding.UTF8.GetBytes |> encrypt pass
+        let channel = System.Convert.ToBase64String(channelBytes :> obj :?> byte [])
+
         let! response =
-            fetch server [ Method HttpMethod.GET ]
+            fetch
+                server
+                [ Method HttpMethod.POST
+                  requestHeaders [ Custom("X-Session", channel) ] ]
             |> Async.AwaitPromise
 
         let! buf = response.arrayBuffer () |> Async.AwaitPromise
@@ -101,8 +107,11 @@ let loadAllPayloads (server: string) (pass: string) : byte [] list Async =
         return result |> List.rev
     }
 
-let upload (server: string) (pass: string) (data: byte []) : unit Async =
+let upload (username: string) (server: string) (pass: string) (data: byte []) : unit Async =
     async {
+        let! channelBytes = username |> Encoding.UTF8.GetBytes |> encrypt pass
+        let channel = System.Convert.ToBase64String(channelBytes :> obj :?> byte [])
+
         let! payload = encrypt pass data
         let blob = Browser.Blob.Blob.Create([| payload |])
 
@@ -110,6 +119,7 @@ let upload (server: string) (pass: string) (data: byte []) : unit Async =
             fetch
                 server
                 [ Method HttpMethod.POST
+                  requestHeaders [ Custom("X-Session", channel) ]
                   Body(BodyInit.Case1 blob) ]
             |> Async.AwaitPromise
 

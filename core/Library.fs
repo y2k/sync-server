@@ -41,7 +41,7 @@ type Event =
     end
 
 type 't MessagesRequested =
-    | MessagesRequested of server: string * pass: string * (Result<byte [] list, exn> -> 't)
+    | MessagesRequested of username: string * server: string * pass: string * (Result<byte [] list, exn> -> 't)
     interface Event
 
 type 'model ModelChanged =
@@ -59,6 +59,9 @@ module ListComponent =
         { username: string
           pass: string
           items: Item [] }
+        member this.buttonDisabled =
+            String.IsNullOrEmpty this.username
+            || String.IsNullOrEmpty this.pass
 
     type Msg =
         | HomeClicked
@@ -78,7 +81,8 @@ module ListComponent =
         | HomeClicked -> [ NavigationChanged "home" ]
         | UsernameChanged value -> [ ModelChanged { model with username = value } ]
         | PasswordChanged value -> [ ModelChanged { model with pass = value } ]
-        | LoadMessagesClicked -> [ MessagesRequested("/api/history/0", Password.expand model.pass, MessagesLoaded) ]
+        | LoadMessagesClicked ->
+            [ MessagesRequested(model.username, "/api/history-get", Password.expand model.pass, MessagesLoaded) ]
         | MessagesLoaded (Ok payloads) ->
             let items =
                 payloads
@@ -94,7 +98,12 @@ type PreferencesEffect =
     interface Event
 
 type 't NewMessageCreated =
-    | NewMessageCreated of server: string * pass: string * payload: byte [] * (Result<unit, exn> -> 't)
+    | NewMessageCreated of
+        username: string *
+        server: string *
+        pass: string *
+        payload: byte [] *
+        (Result<unit, exn> -> 't)
     interface Event
 
 module HomeComponent =
@@ -157,7 +166,13 @@ module HomeComponent =
             let payload = Message.make model.title model.url mode
 
             [ ModelChanged { model with isBusy = true }
-              NewMessageCreated("/api/history", Password.expand model.serverPass, payload, AddResult) ]
+              NewMessageCreated(
+                  model.username,
+                  "/api/history-add",
+                  Password.expand model.serverPass,
+                  payload,
+                  AddResult
+              ) ]
         | AddResult _ ->
             [ ModelChanged
                   { model with
