@@ -232,6 +232,9 @@ module RemoteSyncer =
           >=> path "/index.css"
           >=> Files.file "../web/public/index.css"
           GET
+          >=> path "/favicon.svg"
+          >=> Files.file "../web/public/favicon.svg"
+          GET
           >=> path "/bundle.js"
           >=> Files.file "../web/public/bundle.js"
           POST
