@@ -77,6 +77,7 @@ let ListViewComponent (props: _) =
                 ==> fun e -> dispatch (ListComponent.UsernameChanged e?target?value) ] []
         input [ "class" ==> "input"
                 "placeholder" ==> "Password"
+                "type" ==> "password"
                 "value" ==> model.pass
                 "onInput"
                 ==> fun e -> dispatch (ListComponent.PasswordChanged e?target?value) ] []
@@ -145,6 +146,7 @@ let HomeViewComponent (props: _) =
                 ==> fun e -> dispatch (HomeComponent.UsernameChanged e?target?value) ] []
         input [ "class" ==> "input"
                 "placeholder" ==> "Password"
+                "type" ==> "password"
                 "value" ==> model.serverPass
                 "onInput"
                 ==> fun e -> dispatch (HomeComponent.PasswordChanged e?target?value) ] []
