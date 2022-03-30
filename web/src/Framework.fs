@@ -38,6 +38,9 @@ module Preact =
     let inline select props children = h ("select", createObj props, children)
     let inline option props children = h ("option", createObj props, children)
     let inline label props children = h ("label", createObj props, children)
+    let inline ul props children = h ("ul", createObj props, children)
+    let inline li props children = h ("li", createObj props, children)
+    let inline a props children = h ("a", createObj props, children)
 
     let inline textarea props children =
         h ("textarea", createObj props, children)

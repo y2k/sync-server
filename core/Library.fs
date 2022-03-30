@@ -40,16 +40,52 @@ type Event =
     interface
     end
 
-type 't MessagesRequested =
-    | MessagesRequested of username: string * server: string * pass: string * (Result<byte [] list, exn> -> 't)
+type NavigationChanged =
+    | NavigationChanged of string
     interface Event
+
+module NavigationComponent =
+    type Msg =
+        | HomeClicked
+        | ListClicked
+        | PictureClicked
+
+    let update msg : Event list =
+        match msg with
+        | HomeClicked -> [ NavigationChanged "home" ]
+        | ListClicked -> [ NavigationChanged "list" ]
+        | PictureClicked -> [ NavigationChanged "pic" ]
 
 type 'model ModelChanged =
     | ModelChanged of 'model
     interface Event
 
-type NavigationChanged =
-    | NavigationChanged of string
+module PictureComponent =
+    type Model =
+        { username: string
+          password: string
+          path: string }
+
+    type Msg =
+        | NavigationClicked of NavigationComponent.Msg
+        | UsernameChanged of string
+        | PasswordChanged of string
+        | PathChanged of string
+
+    let init =
+        { username = ""
+          password = ""
+          path = "" },
+        []
+
+    let update model msg =
+        match msg with
+        | NavigationClicked m -> NavigationComponent.update m
+        | PathChanged path -> [ ModelChanged { model with path = path } ]
+        | _ -> []
+
+type 't MessagesRequested =
+    | MessagesRequested of username: string * server: string * pass: string * (Result<byte [] list, exn> -> 't)
     interface Event
 
 module ListComponent =
@@ -64,7 +100,7 @@ module ListComponent =
             || String.IsNullOrEmpty this.pass
 
     type Msg =
-        | HomeClicked
+        | NavigationClicked of NavigationComponent.Msg
         | PasswordChanged of string
         | LoadMessagesClicked
         | MessagesLoaded of Result<byte [] list, exn>
@@ -78,7 +114,7 @@ module ListComponent =
 
     let update (model: Model) (msg: Msg) : Event list =
         match msg with
-        | HomeClicked -> [ NavigationChanged "home" ]
+        | NavigationClicked m -> NavigationComponent.update m
         | UsernameChanged value -> [ ModelChanged { model with username = value } ]
         | PasswordChanged value -> [ ModelChanged { model with pass = value } ]
         | LoadMessagesClicked ->
@@ -133,7 +169,7 @@ module HomeComponent =
         | UsernameChanged of string
         | Add
         | AddResult of Result<unit, exn>
-        | ListClicked
+        | NavigationClicked of NavigationComponent.Msg
 
     let init: Model * Event list =
         { serverHost = ""
@@ -150,7 +186,7 @@ module HomeComponent =
 
     let update (prefs: Map<string, string>) (model: Model) (msg: Msg) : Event list =
         match msg with
-        | ListClicked -> [ NavigationChanged "list" ]
+        | NavigationClicked m -> NavigationComponent.update m
         | UsernameChanged value -> [ ModelChanged { model with username = value } ]
         | ServerHostChanged value -> [ ModelChanged { model with serverHost = value } ]
         | PasswordChanged value -> [ ModelChanged { model with serverPass = value } ]

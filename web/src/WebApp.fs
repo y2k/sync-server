@@ -38,6 +38,54 @@ let handleEvent (state: 'model) dispatch (e: Event) =
 
     newState
 
+let NavigationViewComponent dispatch =
+    let tabs =
+        [ "Home", NavigationComponent.HomeClicked
+          "List", NavigationComponent.ListClicked
+          "Picture", NavigationComponent.PictureClicked ]
+
+    let item title msg =
+        li [ "onclick" ==> fun _ -> dispatch msg ] [
+            a [] [ str title ]
+        ]
+
+    div [ "class" ==> "tabs is-boxed" ] [
+        ul [] (tabs |> List.map (fun (t, m) -> item t m))
+    ]
+
+let PictureViewComponent (props: _) =
+    let (model, dispatch) =
+        ElmHooks.useElm handleEvent PictureComponent.init PictureComponent.update
+
+    div [ "class" ==> "form" ] [
+        NavigationViewComponent(PictureComponent.NavigationClicked >> dispatch)
+        label [ "class" ==> "label" ] [
+            str "Messages"
+        ]
+        input [ "class" ==> "input"
+                "type" ==> "file"
+                "accept" ==> "image/*"
+                "onInput"
+                ==> fun e -> dispatch (PictureComponent.PathChanged e?target?value) ] []
+        button [ "class" ==> "button" ] [
+            str "Upload"
+        ]
+        label [ "class" ==> "label" ] [
+            str "Auth"
+        ]
+        input [ "class" ==> "input"
+                "placeholder" ==> "Username"
+                "value" ==> model.username
+                "onInput"
+                ==> fun e -> dispatch (PictureComponent.UsernameChanged e?target?value) ] []
+        input [ "class" ==> "input"
+                "placeholder" ==> "Password"
+                "type" ==> "password"
+                "value" ==> model.password
+                "onInput"
+                ==> fun e -> dispatch (PictureComponent.PasswordChanged e?target?value) ] []
+    ]
+
 let ListViewComponent (props: _) =
     let (model, dispatch) =
         ElmHooks.useElm handleEvent ListComponent.init ListComponent.update
@@ -62,13 +110,9 @@ let ListViewComponent (props: _) =
         |> div [ "class" ==> "list" ]
 
     div [ "class" ==> "form" ] [
-        button [ "class" ==> "button"
-                 "onclick"
-                 ==> fun _ -> dispatch ListComponent.HomeClicked ] [
-            str "Open home"
-        ]
+        NavigationViewComponent(ListComponent.NavigationClicked >> dispatch)
         label [ "class" ==> "label" ] [
-            str "Messages"
+            str "Auth"
         ]
         input [ "class" ==> "input"
                 "placeholder" ==> "Username"
@@ -81,13 +125,16 @@ let ListViewComponent (props: _) =
                 "value" ==> model.pass
                 "onInput"
                 ==> fun e -> dispatch (ListComponent.PasswordChanged e?target?value) ] []
+        label [ "class" ==> "label" ] [
+            str "Messages"
+        ]
+        listView
         button [ "class" ==> "button"
                  "disabled" ==> model.buttonDisabled
                  "onclick"
                  ==> fun _ -> dispatch ListComponent.LoadMessagesClicked ] [
             str "Load items"
         ]
-        listView
     ]
 
 let HomeViewComponent (props: _) =
@@ -95,11 +142,7 @@ let HomeViewComponent (props: _) =
         ElmHooks.useElm handleEvent HomeComponent.init (Preferences.decorate HomeComponent.update)
 
     div [ "class" ==> "form" ] [
-        button [ "class" ==> "button"
-                 "onclick"
-                 ==> fun _ -> dispatch HomeComponent.ListClicked ] [
-            str "Open list"
-        ]
+        NavigationViewComponent(HomeComponent.NavigationClicked >> dispatch)
         label [ "class" ==> "label" ] [
             str "Link config"
         ]
@@ -137,7 +180,7 @@ let HomeViewComponent (props: _) =
             str "Add"
         ]
         label [ "class" ==> "label" ] [
-            str "Server configuration"
+            str "Auth"
         ]
         input [ "class" ==> "input"
                 "placeholder" ==> "Username"
@@ -154,4 +197,5 @@ let HomeViewComponent (props: _) =
 
 match document.location.search with
 | "?page=list" -> render (comp (ListViewComponent, (), [])) (document.getElementById "root")
+| "?page=pic" -> render (comp (PictureViewComponent, (), [])) (document.getElementById "root")
 | _ -> render (comp (HomeViewComponent, (), [])) (document.getElementById "root")

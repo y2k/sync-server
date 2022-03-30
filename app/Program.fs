@@ -190,7 +190,14 @@ module RemoteSyncer =
 
     let private handleGet getNextById (req: HttpRequest) =
         let topic = req.headers |> Map.ofSeq |> Map.find "x-session"
-        let id: int64 = 0
+
+        let id =
+            req.query
+            |> Map.ofSeq
+            |> Map.tryFind "prevId"
+            |> Option.flatten
+            |> Option.map int64
+            |> Option.defaultValue 0
 
         match getNextById topic id with
         | [] -> Successful.NO_CONTENT
