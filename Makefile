@@ -9,4 +9,4 @@ cbuild:
 	dotnet clean
 	dotnet build
 
-.PHONY: start start_web start_back build
+.PHONY: start build cbuild
