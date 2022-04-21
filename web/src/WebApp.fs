@@ -139,7 +139,7 @@ let ListViewComponent (props: _) =
 
 let HomeViewComponent (props: _) =
     let (model, dispatch) =
-        ElmHooks.useElm handleEvent HomeComponent.init (Preferences.decorate HomeComponent.update)
+        ElmHooks.useElm handleEvent HomeComponent.init HomeComponent.update
 
     div [ "class" ==> "form" ] [
         NavigationViewComponent(HomeComponent.NavigationClicked >> dispatch)

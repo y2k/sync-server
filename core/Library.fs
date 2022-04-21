@@ -129,10 +129,6 @@ module ListComponent =
             [ ModelChanged { model with items = items } ]
         | MessagesLoaded (Error _) -> []
 
-type PreferencesEffect =
-    | PreferencesEffect of string * string
-    interface Event
-
 type 't NewMessageCreated =
     | NewMessageCreated of
         username: string *
@@ -184,7 +180,7 @@ module HomeComponent =
                "Watch late (youtube)" |] },
         []
 
-    let update (prefs: Map<string, string>) (model: Model) (msg: Msg) : Event list =
+    let update (model: Model) (msg: Msg) : Event list =
         match msg with
         | NavigationClicked m -> NavigationComponent.update m
         | UsernameChanged value -> [ ModelChanged { model with username = value } ]
