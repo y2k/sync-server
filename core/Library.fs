@@ -10,6 +10,7 @@ module Message =
     type Mode =
         | Url
         | Watchlate
+        | Deleted
 
     type t =
         { title: string
@@ -22,7 +23,12 @@ module Message =
 
         { url = Uri.UnescapeDataString parts.[0]
           title = Uri.UnescapeDataString parts.[1]
-          mode = Url }
+          mode =
+            match parts.[2] with
+            | "0" -> Url
+            | "1" -> Watchlate
+            | "2" -> Deleted
+            | i -> failwithf "Unsupported mode (%s)" i }
 
     let make (title: string) (url: string) (mode: Mode) =
         let url = Uri.EscapeDataString url
@@ -32,6 +38,7 @@ module Message =
             match mode with
             | Url -> 0
             | Watchlate -> 1
+            | Deleted -> 2
 
         $"%s{url}&%s{title}&%i{mode}"
         |> Text.Encoding.UTF8.GetBytes
@@ -88,8 +95,39 @@ type 't MessagesRequested =
     | MessagesRequested of username: string * server: string * pass: string * (Result<byte [] list, exn> -> 't)
     interface Event
 
+type 't NewMessageCreated =
+    | NewMessageCreated of
+        username: string *
+        server: string *
+        pass: string *
+        payload: byte [] *
+        (Result<unit, exn> -> 't)
+    interface Event
+
+module Domain =
+    let payloadToList payloads =
+        let (delList, items) =
+            payloads
+            |> List.map Message.decode
+            |> List.partition (fun x ->
+                match x.mode with
+                | Message.Deleted -> true
+                | _ -> false)
+
+        let delSet = delList |> Seq.map (fun x -> x.url) |> Set.ofSeq
+
+        let items =
+            items
+            |> Seq.filter (fun x -> not (Set.contains x.url delSet))
+            |> Seq.toArray
+
+        items
+
 module ListComponent =
-    type Item = { url: string; title: string }
+    type Item =
+        { url: string
+          title: string
+          mode: Message.Mode }
 
     type Model =
         { username: string
@@ -105,6 +143,7 @@ module ListComponent =
         | LoadMessagesClicked
         | MessagesLoaded of Result<byte [] list, exn>
         | UsernameChanged of string
+        | DeleteClicked of int
 
     let init: Model * Event list =
         { username = ""
@@ -121,22 +160,22 @@ module ListComponent =
             [ MessagesRequested(model.username, "/api/history-get", Password.expand model.pass, MessagesLoaded) ]
         | MessagesLoaded (Ok payloads) ->
             let items =
-                payloads
-                |> List.map Message.decode
-                |> List.map (fun i -> { url = i.url; title = i.title })
-                |> List.toArray
+                Domain.payloadToList payloads
+                |> Array.map (fun i ->
+                    { url = i.url
+                      title = i.title
+                      mode = i.mode })
 
             [ ModelChanged { model with items = items } ]
         | MessagesLoaded (Error _) -> []
-
-type 't NewMessageCreated =
-    | NewMessageCreated of
-        username: string *
-        server: string *
-        pass: string *
-        payload: byte [] *
-        (Result<unit, exn> -> 't)
-    interface Event
+        | DeleteClicked i ->
+            [ NewMessageCreated(
+                  model.username,
+                  "/api/history-add",
+                  Password.expand model.pass,
+                  Message.make "" (model.items.[i].url) Message.Deleted,
+                  fun _ -> LoadMessagesClicked
+              ) ]
 
 module HomeComponent =
     type Model =

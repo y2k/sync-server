@@ -34,6 +34,7 @@ module Preact =
     let inline input props children = h ("input", createObj props, children)
     let inline form props children = h ("form", createObj props, children)
     let inline div props children = h ("div", createObj props, children)
+    let inline footer props children = h ("footer", createObj props, children)
     let inline span props children = h ("span", createObj props, children)
     let inline select props children = h ("select", createObj props, children)
     let inline option props children = h ("option", createObj props, children)

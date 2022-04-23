@@ -38,19 +38,24 @@ let handleEvent (state: 'model) dispatch (e: Event) =
 
     newState
 
-let NavigationViewComponent dispatch =
+let NavigationViewComponent activeIndex dispatch =
     let tabs =
         [ "Home", NavigationComponent.HomeClicked
           "List", NavigationComponent.ListClicked
           "Picture", NavigationComponent.PictureClicked ]
 
-    let item title msg =
-        li [ "onclick" ==> fun _ -> dispatch msg ] [
+    let item i title msg =
+        li [ "onclick" ==> fun _ -> dispatch msg
+             "class"
+             ==> (if i = activeIndex then
+                      "is-active"
+                  else
+                      "") ] [
             a [] [ str title ]
         ]
 
     div [ "class" ==> "tabs is-boxed" ] [
-        ul [] (tabs |> List.map (fun (t, m) -> item t m))
+        ul [] (tabs |> List.mapi (fun i (t, m) -> item i t m))
     ]
 
 let PictureViewComponent (props: _) =
@@ -58,7 +63,7 @@ let PictureViewComponent (props: _) =
         ElmHooks.useElm handleEvent PictureComponent.init PictureComponent.update
 
     div [ "class" ==> "form" ] [
-        NavigationViewComponent(PictureComponent.NavigationClicked >> dispatch)
+        NavigationViewComponent 2 (PictureComponent.NavigationClicked >> dispatch)
         label [ "class" ==> "label" ] [
             str "Messages"
         ]
@@ -92,7 +97,7 @@ let ListViewComponent (props: _) =
 
     let listView =
         model.items
-        |> Array.map (fun item ->
+        |> Array.mapi (fun i item ->
             div [ "class" ==> "card" ] [
                 div [ "class" ==> "card-content" ] [
                     div [ "class" ==> "media" ] [
@@ -106,11 +111,18 @@ let ListViewComponent (props: _) =
                         ]
                     ]
                 ]
+                footer [ "class" ==> "card-footer" ] [
+                    a [ "class" ==> "card-footer-item"
+                        "onclick"
+                        ==> fun _ -> dispatch (ListComponent.DeleteClicked i) ] [
+                        str "Delete"
+                    ]
+                ]
             ])
         |> div [ "class" ==> "list" ]
 
     div [ "class" ==> "form" ] [
-        NavigationViewComponent(ListComponent.NavigationClicked >> dispatch)
+        NavigationViewComponent 1 (ListComponent.NavigationClicked >> dispatch)
         label [ "class" ==> "label" ] [
             str "Auth"
         ]
@@ -142,7 +154,7 @@ let HomeViewComponent (props: _) =
         ElmHooks.useElm handleEvent HomeComponent.init HomeComponent.update
 
     div [ "class" ==> "form" ] [
-        NavigationViewComponent(HomeComponent.NavigationClicked >> dispatch)
+        NavigationViewComponent 0 (HomeComponent.NavigationClicked >> dispatch)
         label [ "class" ==> "label" ] [
             str "Link config"
         ]
