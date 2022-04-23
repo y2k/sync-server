@@ -10,6 +10,7 @@ module Message =
     type Mode =
         | Url
         | Watchlate
+        | YoutubePlayList
         | Deleted
 
     type t =
@@ -28,6 +29,7 @@ module Message =
             | "0" -> Url
             | "1" -> Watchlate
             | "2" -> Deleted
+            | "3" -> YoutubePlayList
             | i -> failwithf "Unsupported mode (%s)" i }
 
     let make (title: string) (url: string) (mode: Mode) =
@@ -39,6 +41,7 @@ module Message =
             | Url -> 0
             | Watchlate -> 1
             | Deleted -> 2
+            | YoutubePlayList -> 3
 
         $"%s{url}&%s{title}&%i{mode}"
         |> Text.Encoding.UTF8.GetBytes
@@ -216,7 +219,8 @@ module HomeComponent =
           linkType = 0
           linkTypes =
             [| "URL (bookmark)"
-               "Watch late (youtube)" |] },
+               "Watch late (youtube)"
+               "Youtube play-list" |] },
         []
 
     let update (model: Model) (msg: Msg) : Event list =
@@ -232,7 +236,9 @@ module HomeComponent =
             let mode =
                 match model.linkType with
                 | 0 -> Message.Url
-                | _ -> Message.Watchlate
+                | 1 -> Message.Watchlate
+                | 2 -> Message.YoutubePlayList
+                | _ -> raise (exn ())
 
             let payload = Message.make model.title model.url mode
 
